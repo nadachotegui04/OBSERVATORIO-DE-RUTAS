@@ -1,0 +1,136 @@
+{
+  "entities": {
+    "PublishedDataset": {
+      "title": "Published Dataset",
+      "description": "The official aviation dataset published by the administrator",
+      "type": "object",
+      "properties": {
+        "fileName": {
+          "type": "string",
+          "description": "Name of the Excel/CSV file uploaded"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "ISO timestamp of publication"
+        },
+        "routeCount": {
+          "type": "number",
+          "description": "Total number of processed routes"
+        },
+        "isDemoLoaded": {
+          "type": "boolean",
+          "description": "Whether the dataset is the default demo"
+        },
+        "chunkCount": {
+          "type": "number",
+          "description": "Number of chunk documents"
+        },
+        "routesPreview": {
+          "type": "array",
+          "description": "Optional inline routes for quick preview"
+        }
+      },
+      "required": ["fileName", "updatedAt", "routeCount"]
+    },
+    "DatasetChunk": {
+      "title": "Dataset Chunk",
+      "description": "Chunk of flight routes to safely support large Excel files within Firestore limits",
+      "type": "object",
+      "properties": {
+        "chunkIndex": {
+          "type": "number",
+          "description": "Sequential index of the chunk"
+        },
+        "routes": {
+          "type": "array",
+          "description": "Batch of FlightRoute objects"
+        }
+      },
+      "required": ["chunkIndex", "routes"]
+    },
+    "AdminSettings": {
+      "title": "Admin Settings",
+      "description": "Access control configuration",
+      "type": "object",
+      "properties": {
+        "adminPin": {
+          "type": "string",
+          "description": "Admin access key"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Last updated date"
+        }
+      }
+    },
+    "AfacUser": {
+      "title": "AFAC Authorized User",
+      "description": "Authorized AFAC staff member profile and credentials",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "fullName": { "type": "string" },
+        "department": { "type": "string" },
+        "role": { "type": "string" },
+        "passwordHash": { "type": "string" },
+        "lastLoginAt": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["email"]
+    },
+    "AccessLog": {
+      "title": "Access Audit Log",
+      "description": "Security audit record of staff sign-ins",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "userAgent": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["email", "timestamp", "status"]
+    }
+  },
+  "firestore": {
+    "/datasets/{datasetId}": {
+      "entity": "PublishedDataset",
+      "description": "Published datasets metadata",
+      "allow": {
+        "read": "true",
+        "write": "true"
+      }
+    },
+    "/datasets/{datasetId}/chunks/{chunkId}": {
+      "entity": "DatasetChunk",
+      "description": "Route data chunks",
+      "allow": {
+        "read": "true",
+        "write": "true"
+      }
+    },
+    "/settings/{settingId}": {
+      "entity": "AdminSettings",
+      "description": "System and access configuration",
+      "allow": {
+        "read": "true",
+        "write": "true"
+      }
+    },
+    "/afac_users/{userId}": {
+      "entity": "AfacUser",
+      "description": "Authorized AFAC user accounts",
+      "allow": {
+        "read": "true",
+        "write": "true"
+      }
+    },
+    "/access_logs/{logId}": {
+      "entity": "AccessLog",
+      "description": "Confidential access audit records",
+      "allow": {
+        "read": "true",
+        "write": "true"
+      }
+    }
+  }
+}

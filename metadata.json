@@ -1,0 +1,6 @@
+{
+  "name": "Visualizador de Rutas Aéreas México",
+  "description": "Sistema de Información Geográfica (GIS) interactivo para el procesamiento de archivos Excel/CSV, análisis de rutas aéreas y comparación side-by-side sobre el mapa de la República Mexicana.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
