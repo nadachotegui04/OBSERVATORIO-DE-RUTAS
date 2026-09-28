@@ -1317,6 +1317,9 @@ export default function App() {
               savedMaps={savedMaps}
               currentMainFilters={filters}
               customAirlineColors={customAirlineColors}
+              activeMapMode={mapMode}
+              onMapModeChange={setMapMode}
+              onUpdateAirlineColor={handleUpdateAirlineColor}
             />
           )}
 
@@ -1371,8 +1374,11 @@ export default function App() {
         isOpen={isExportOpen}
         onClose={() => setIsExportOpen(false)}
         routes={filteredRoutes}
+        allRoutes={allRoutes}
         airports={filteredAirports}
-        mapElementId={activeView === 'compare' ? 'map-compare-a' : 'main-flight-map'}
+        activeView={activeView}
+        activeMapMode={mapMode}
+        mapElementId={activeView === 'compare' ? 'compare-view-container' : 'main-flight-map'}
         customAirlineColors={customAirlineColors}
         isAdmin={isAdmin}
       />

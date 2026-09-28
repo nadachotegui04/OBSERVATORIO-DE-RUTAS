@@ -100,9 +100,14 @@ export const AfacAuthGate: React.FC<AfacAuthGateProps> = ({ onLoginSuccess }) =>
           <p className="text-xs sm:text-sm font-bold text-cyan-300 tracking-wide mt-0.5">
             Coordinación de Concesiones y Transporte Aéreo
           </p>
-          <p className="text-[11px] text-slate-400 font-medium mt-0.5">
-            Sistema de Inteligencia Cartográfica y Rutas Aéreas (SIG-AFAC)
-          </p>
+          <div className="mt-2.5 pt-2 border-t border-slate-800">
+            <h3 className="text-base sm:text-lg font-black text-white tracking-tight">
+              <span className="text-cyan-400">Observatorio de Conectividad Aerocomercial.</span>
+            </h3>
+            <p className="text-[11px] text-slate-400 font-medium mt-0.5">
+              Sistema de Inteligencia Cartográfica y Rutas Aéreas (SIG-AFAC)
+            </p>
+          </div>
 
           <div className="mt-3 inline-block px-2.5 py-1 bg-amber-500/10 border border-amber-500/30 rounded-lg text-[11px] text-amber-300 font-semibold">
             🔒 INFORMACIÓN CONFIDENCIAL Y RESERVADA • ACCESO RESTRINGIDO

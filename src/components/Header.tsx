@@ -38,22 +38,28 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-600 to-sky-400 flex items-center justify-center shadow-lg shadow-cyan-500/20 text-slate-950 font-black shrink-0">
           <Plane className="w-5 h-5 text-slate-950 -rotate-45" />
         </div>
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <h1 className="text-xs md:text-sm font-extrabold text-white tracking-tight leading-tight">
-              Agencia Federal de Aviación Civil
-            </h1>
-            <span className="text-[9px] uppercase font-bold bg-cyan-950 text-cyan-400 px-1.5 py-0.5 rounded-full border border-cyan-800/80 shrink-0">
-              Rutas Aéreas
-            </span>
+        <div className="min-w-0 flex items-center gap-3">
+          <div className="shrink-0">
+            <div className="flex items-center gap-2">
+              <h1 className="text-xs md:text-sm font-extrabold text-white tracking-tight leading-tight">
+                Agencia Federal de Aviación Civil
+              </h1>
+            </div>
+            <div className="leading-tight mt-0.5">
+              <p className="text-[10.5px] md:text-[11px] font-bold text-slate-300 truncate">
+                Dirección Ejecutiva de Transporte y Control Aeronáutico
+              </p>
+              <p className="text-[10px] md:text-[10.5px] font-semibold text-cyan-400 truncate">
+                Coordinación de Concesiones y Transporte Aéreo
+              </p>
+            </div>
           </div>
-          <div className="leading-tight mt-0.5">
-            <p className="text-[11px] font-bold text-slate-300 truncate">
-              Dirección Ejecutiva de Transporte y Control Aeronáutico
-            </p>
-            <p className="text-[10.5px] font-semibold text-cyan-400 truncate">
-              Coordinación de Concesiones y Transporte Aéreo
-            </p>
+          <div className="h-8 w-px bg-slate-800 shrink-0"></div>
+          <div className="min-w-0 shrink-0">
+            <h2 className="text-xs md:text-sm font-black text-white tracking-tight flex items-center gap-1.5">
+              <span className="text-cyan-400">Observatorio de Conectividad Aerocomercial.</span>
+            </h2>
+            <p className="text-[10px] text-slate-400 font-medium">Plataforma de Inteligencia Aeronáutica</p>
           </div>
         </div>
       </div>
@@ -124,28 +130,6 @@ export const Header: React.FC<HeaderProps> = ({
             </>
           )}
         </div>
-
-        {/* Admin Status / Login button */}
-        {isAdmin ? (
-          <button
-            onClick={onOpenAuthModal}
-            title="Permisos de administrador activos. Clic para gestionar o salir."
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-950/70 hover:bg-emerald-900/80 text-emerald-300 border border-emerald-700/80 rounded-xl text-xs font-bold transition shadow-sm cursor-pointer"
-          >
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-            <span className="hidden md:inline">Admin Activo</span>
-            <span className="text-[10px] bg-emerald-900/90 text-emerald-200 px-1.5 py-0.2 rounded">Editor</span>
-          </button>
-        ) : (
-          <button
-            onClick={onOpenAuthModal}
-            title="Hacer clic para ingresar clave y habilitar la carga de archivos Excel"
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 rounded-xl text-xs font-medium transition shadow-sm cursor-pointer"
-          >
-            <Lock className="w-3.5 h-3.5 text-cyan-400" />
-            <span>Acceso Admin</span>
-          </button>
-        )}
 
         {/* Demo data restore (admin only) */}
         {isAdmin && !isDemoLoaded && (

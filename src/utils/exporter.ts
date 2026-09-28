@@ -155,57 +155,71 @@ async function exportMapDirectCanvas(
     ctx.restore();
   });
 
-  // 5. Header Title Card (Top Left)
+  // 5. Official Institutional Header Title Card (Top Left)
   ctx.save();
-  ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
-  ctx.fillRect(40, 40, 680, 140);
-  ctx.strokeStyle = 'rgba(56, 189, 248, 0.4)';
-  ctx.lineWidth = 1.5;
-  ctx.strokeRect(40, 40, 680, 140);
+  ctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
+  ctx.fillRect(40, 40, 780, 160);
+  ctx.strokeStyle = 'rgba(56, 189, 248, 0.6)';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(40, 40, 780, 160);
 
   ctx.fillStyle = '#38bdf8';
   ctx.font = '900 24px -apple-system, sans-serif';
-  ctx.fillText('✈️ GIS AVIACIÓN MÉXICO — RUTAS AÉREAS', 65, 80);
+  ctx.fillText('Observatorio de Conectividad Aerocomercial.', 65, 76);
 
-  ctx.fillStyle = '#94a3b8';
-  ctx.font = '14px -apple-system, sans-serif';
-  ctx.fillText(`Cartografía geodésica • Gran Círculo • ${new Date().toLocaleDateString('es-MX')}`, 65, 110);
-
-  ctx.fillStyle = '#e2e8f0';
+  ctx.fillStyle = '#ffffff';
   ctx.font = 'bold 15px -apple-system, sans-serif';
-  const totalPax = routes.reduce((acc, r) => acc + (r.passengers || 0), 0);
-  const totalFlights = routes.reduce((acc, r) => acc + (r.flightsCount || 0), 0);
-  ctx.fillText(`Rutas: ${routes.length} | Aeropuertos: ${airports.length} | Vuelos: ${totalFlights.toLocaleString()} | Pasajeros: ${(totalPax / 1000000).toFixed(2)}M`, 65, 145);
+  ctx.fillText('AGENCIA FEDERAL DE AVIACIÓN CIVIL', 65, 102);
+
+  ctx.fillStyle = '#cbd5e1';
+  ctx.font = 'bold 12.5px -apple-system, sans-serif';
+  ctx.fillText('DIRECCIÓN EJECUTIVA DE TRANSPORTE Y CONTROL AERONÁUTICO', 65, 124);
+
+  ctx.fillStyle = '#38bdf8';
+  ctx.font = 'bold 12.5px -apple-system, sans-serif';
+  ctx.fillText('COORDINACIÓN DE CONCESIONES Y TRANSPORTE AÉREO', 65, 144);
+
+  ctx.fillStyle = '#f8fafc';
+  ctx.font = 'bold 15px "SF Mono", monospace, sans-serif';
+  ctx.fillText(`Rutas activas en mapa: ${routes.length}  |  Aeropuertos: ${airports.length}`, 65, 178);
   ctx.restore();
 
-  // 6. Airline Legend Card (Bottom Right)
+  // 6. Airline Legend Card (Bottom Right) - High-density multi-column if needed
   const uniqueAirlines = Array.from(new Set(routes.map((r) => r.airline))).filter(Boolean);
   if (uniqueAirlines.length > 0) {
-    const cardHeight = Math.min(420, 70 + uniqueAirlines.slice(0, 10).length * 32);
+    const itemsPerCol = 14;
+    const numCols = Math.ceil(uniqueAirlines.length / itemsPerCol);
+    const colWidth = 260;
+    const cardWidth = Math.max(380, numCols * colWidth + 40);
+    const cardHeight = Math.min(600, 60 + Math.min(itemsPerCol, uniqueAirlines.length) * 28);
+
     ctx.save();
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.92)';
-    ctx.fillRect(width - 440, height - cardHeight - 40, 400, cardHeight);
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
+    ctx.fillRect(width - cardWidth - 40, height - cardHeight - 40, cardWidth, cardHeight);
+    ctx.strokeStyle = 'rgba(56, 189, 248, 0.4)';
     ctx.lineWidth = 1.5;
-    ctx.strokeRect(width - 440, height - cardHeight - 40, 400, cardHeight);
+    ctx.strokeRect(width - cardWidth - 40, height - cardHeight - 40, cardWidth, cardHeight);
 
-    ctx.fillStyle = '#f8fafc';
-    ctx.font = 'bold 16px -apple-system, sans-serif';
-    ctx.fillText('LEYENDA DE AEROLÍNEAS', width - 415, height - cardHeight);
+    ctx.fillStyle = '#38bdf8';
+    ctx.font = 'bold 15px -apple-system, sans-serif';
+    ctx.fillText(`VIÑETA CROMÁTICA DE AEROLÍNEAS (${uniqueAirlines.length})`, width - cardWidth - 20, height - cardHeight - 15);
 
-    uniqueAirlines.slice(0, 10).forEach((airline, idx) => {
+    uniqueAirlines.forEach((airline, idx) => {
+      const col = Math.floor(idx / itemsPerCol);
+      const row = idx % itemsPerCol;
       const color = getAirlineColor(airline, customColors);
-      const ly = height - cardHeight + 40 + idx * 30;
+      const lx = width - cardWidth - 20 + col * colWidth;
+      const ly = height - cardHeight + 25 + row * 26;
 
       ctx.fillStyle = color;
-      ctx.fillRect(width - 415, ly - 12, 28, 14);
+      ctx.fillRect(lx, ly - 11, 24, 12);
       ctx.strokeStyle = '#ffffff';
       ctx.lineWidth = 1;
-      ctx.strokeRect(width - 415, ly - 12, 28, 14);
+      ctx.strokeRect(lx, ly - 11, 24, 12);
 
-      ctx.fillStyle = '#e2e8f0';
-      ctx.font = '500 14px -apple-system, sans-serif';
-      ctx.fillText(airline, width - 375, ly);
+      ctx.fillStyle = '#f1f5f9';
+      ctx.font = 'bold 12px "SF Mono", monospace, sans-serif';
+      ctx.fillText(airline.length > 24 ? airline.slice(0, 23) + '…' : airline, lx + 32, ly);
     });
     ctx.restore();
   }
@@ -265,6 +279,595 @@ export async function exportMapToImage(
 
   // Strategy 2: Direct High-Res Vector Canvas Renderer
   await exportMapDirectCanvas(routes, airports, filename, customColors);
+}
+
+/**
+ * Fallback high-resolution Direct Canvas Dual GIS Renderer for Comparison Mode
+ * Generates an ultra-crisp 3.2K side-by-side aeronautical chart
+ */
+async function exportComparisonDirectCanvas(
+  routesA: FlightRoute[] = [],
+  routesB: FlightRoute[] = [],
+  airportsA: Airport[] = [],
+  airportsB: Airport[] = [],
+  airlineAName = 'Todas las Rutas (A)',
+  airlineBName = 'Todas las Rutas (B)',
+  filename = 'comparativa_rutas_mexico.png',
+  customColors?: Record<string, string>
+) {
+  const width = 3200;
+  const height = 1650;
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('No se pudo inicializar contexto 2D de Canvas para la comparativa.');
+
+  // Deep aviation radar background
+  ctx.fillStyle = '#020617';
+  ctx.fillRect(0, 0, width, height);
+
+  // Top Global Institutional Comparison Bar
+  ctx.fillStyle = '#0f172a';
+  ctx.fillRect(0, 0, width, 125);
+  ctx.strokeStyle = '#1e293b';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(0, 125);
+  ctx.lineTo(width, 125);
+  ctx.stroke();
+
+  // Header Title
+  ctx.fillStyle = '#38bdf8';
+  ctx.font = '900 24px -apple-system, sans-serif';
+  ctx.fillText('Observatorio de Conectividad Aerocomercial. — Comparativa Side-by-Side', 50, 42);
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 15px -apple-system, sans-serif';
+  ctx.fillText('AGENCIA FEDERAL DE AVIACIÓN CIVIL', 50, 68);
+
+  ctx.fillStyle = '#94a3b8';
+  ctx.font = 'bold 13px -apple-system, sans-serif';
+  ctx.fillText('DIRECCIÓN EJECUTIVA DE TRANSPORTE Y CONTROL AERONÁUTICO • COORDINACIÓN DE CONCESIONES Y TRANSPORTE AÉREO', 50, 92);
+
+  const routeDelta = routesB.length - routesA.length;
+  ctx.fillStyle = '#38bdf8';
+  ctx.font = 'bold 18px "SF Mono", monospace, sans-serif';
+  ctx.fillText(
+    `Rutas: ${routesA.length} vs ${routesB.length} (${routeDelta >= 0 ? `+${routeDelta}` : routeDelta})  |  Aeropuertos: ${airportsA.length} vs ${airportsB.length}`,
+    width - 850,
+    68
+  );
+
+  // Render a single map pane
+  const renderPane = (
+    paneRoutes: FlightRoute[],
+    paneAirports: Airport[],
+    paneTitle: string,
+    startX: number,
+    startY: number,
+    paneW: number,
+    paneH: number,
+    badgeColor: string
+  ) => {
+    // Background gradient for pane
+    const bgGrad = ctx.createRadialGradient(
+      startX + paneW / 2,
+      startY + paneH / 2,
+      80,
+      startX + paneW / 2,
+      startY + paneH / 2,
+      paneW
+    );
+    bgGrad.addColorStop(0, '#0b132b');
+    bgGrad.addColorStop(0.6, '#030712');
+    bgGrad.addColorStop(1, '#010409');
+    ctx.fillStyle = bgGrad;
+    ctx.fillRect(startX, startY, paneW, paneH);
+
+    // Border
+    ctx.strokeStyle = '#1e293b';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(startX, startY, paneW, paneH);
+
+    // Geographic bounds for Mexico + buffer
+    const minLat = 13.5;
+    const maxLat = 33.5;
+    const minLng = -118.5;
+    const maxLng = -85.5;
+
+    const project = (lat: number, lng: number): [number, number] => {
+      const x = startX + ((lng - minLng) / (maxLng - minLng)) * (paneW - 140) + 70;
+      const y = startY + ((maxLat - lat) / (maxLat - minLat)) * (paneH - 140) + 70;
+      return [x, y];
+    };
+
+    // Coordinate Grid
+    ctx.save();
+    ctx.strokeStyle = 'rgba(56, 189, 248, 0.06)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 6]);
+
+    for (let lat = 15; lat <= 30; lat += 5) {
+      const [, y] = project(lat, minLng);
+      ctx.beginPath();
+      ctx.moveTo(startX + 40, y);
+      ctx.lineTo(startX + paneW - 40, y);
+      ctx.stroke();
+    }
+    for (let lng = -115; lng <= -90; lng += 5) {
+      const [x] = project(minLat, lng);
+      ctx.beginPath();
+      ctx.moveTo(x, startY + 40);
+      ctx.lineTo(x, startY + paneH - 40);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // Flight Arcs
+    paneRoutes.forEach((route) => {
+      const arcPoints = generateGreatCircleArc(
+        [route.originLat, route.originLng],
+        [route.destLat, route.destLng],
+        35,
+        0.14
+      );
+
+      const strokeColor = getAirlineColor(route.airline, customColors);
+      const lineWeight = 3;
+
+      // Glow
+      ctx.save();
+      ctx.strokeStyle = strokeColor;
+      ctx.lineWidth = lineWeight + 3;
+      ctx.globalAlpha = 0.3;
+      ctx.beginPath();
+      arcPoints.forEach((pt, i) => {
+        const [px, py] = project(pt[0], pt[1]);
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      });
+      ctx.stroke();
+      ctx.restore();
+
+      // Sharp Core
+      ctx.save();
+      ctx.strokeStyle = strokeColor;
+      ctx.lineWidth = lineWeight;
+      ctx.globalAlpha = 0.88;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      arcPoints.forEach((pt, i) => {
+        const [px, py] = project(pt[0], pt[1]);
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      });
+      ctx.stroke();
+      ctx.restore();
+    });
+
+    // Airport Nodes
+    paneAirports.forEach((airport) => {
+      const [ax, ay] = project(airport.lat, airport.lng);
+      const isMajor = ['MEX', 'CUN', 'GDL', 'MTY', 'TIJ', 'NLU'].includes(airport.code);
+      const radius = isMajor ? 9 : 5.5;
+
+      ctx.save();
+      ctx.fillStyle = isMajor ? '#38bdf8' : '#0ea5e9';
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(ax, ay, radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      // IATA Label
+      ctx.font = isMajor ? 'bold 13px "SF Mono", monospace' : '10px "SF Mono", monospace';
+      const tw = ctx.measureText(airport.code).width;
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+      ctx.fillRect(ax - tw / 2 - 4, ay - radius - 18, tw + 8, 16);
+      ctx.strokeStyle = isMajor ? '#38bdf8' : 'rgba(255, 255, 255, 0.25)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(ax - tw / 2 - 4, ay - radius - 18, tw + 8, 16);
+
+      ctx.fillStyle = isMajor ? '#38bdf8' : '#e2e8f0';
+      ctx.fillText(airport.code, ax - tw / 2, ay - radius - 5);
+      ctx.restore();
+    });
+
+    // Header Card for Pane
+    ctx.save();
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+    ctx.fillRect(startX + 25, startY + 25, 480, 80);
+    ctx.strokeStyle = badgeColor;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(startX + 25, startY + 25, 480, 80);
+
+    ctx.fillStyle = badgeColor;
+    ctx.font = '900 18px -apple-system, sans-serif';
+    ctx.fillText(paneTitle, startX + 45, startY + 58);
+
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = 'bold 14px -apple-system, sans-serif';
+    ctx.fillText(`${paneRoutes.length} rutas autorizadas • ${paneAirports.length} aeropuertos`, startX + 45, startY + 86);
+    ctx.restore();
+  };
+
+  const paneWidth = (width - 60) / 2;
+  const paneHeight = height - 290;
+
+  // Render Map A (Left)
+  renderPane(routesA, airportsA, `MAPA A: ${airlineAName}`, 20, 130, paneWidth, paneHeight, '#38bdf8');
+
+  // Render Map B (Right)
+  renderPane(routesB, airportsB, `MAPA B: ${airlineBName}`, 20 + paneWidth + 20, 130, paneWidth, paneHeight, '#c084fc');
+
+  // Bottom Viñeta Cromática de Aerolíneas Card
+  const allComparedRoutes = [...routesA, ...routesB];
+  const uniqueAirlines = Array.from(new Set(allComparedRoutes.map((r) => r.airline))).filter(Boolean);
+
+  if (uniqueAirlines.length > 0) {
+    const cardY = height - 140;
+    const cardH = 120;
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.96)';
+    ctx.fillRect(20, cardY, width - 40, cardH);
+    ctx.strokeStyle = '#38bdf8';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(20, cardY, width - 40, cardH);
+
+    ctx.fillStyle = '#38bdf8';
+    ctx.font = 'bold 15px -apple-system, sans-serif';
+    ctx.fillText(`VIÑETA CROMÁTICA DE AEROLÍNEAS EN COMPARATIVA (${uniqueAirlines.length} OPERADORES):`, 40, cardY + 30);
+
+    const itemsPerRow = 6;
+    const colW = (width - 100) / itemsPerRow;
+
+    uniqueAirlines.forEach((airline, idx) => {
+      const row = Math.floor(idx / itemsPerRow);
+      const col = idx % itemsPerRow;
+      const color = getAirlineColor(airline, customColors);
+      const itemX = 40 + col * colW;
+      const itemY = cardY + 58 + row * 28;
+
+      ctx.fillStyle = color;
+      ctx.fillRect(itemX, itemY - 11, 24, 12);
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(itemX, itemY - 11, 24, 12);
+
+      ctx.fillStyle = '#f1f5f9';
+      ctx.font = 'bold 12px "SF Mono", monospace, sans-serif';
+      const label = airline.length > 26 ? airline.slice(0, 25) + '…' : airline;
+      ctx.fillText(label, itemX + 32, itemY);
+    });
+  }
+
+  // Trigger Download
+  const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, 'image/png'));
+  if (!blob) throw new Error('Error al codificar imagen PNG de la comparativa.');
+
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.download = filename;
+  link.href = url;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+
+/**
+ * Exports Side-by-Side Dual Map Comparison to a PNG image file
+ */
+export async function exportComparisonToImage(
+  containerId = 'compare-view-container',
+  filename = 'comparativa_rutas_mexico.png',
+  routesA: FlightRoute[] = [],
+  routesB: FlightRoute[] = [],
+  airportsA: Airport[] = [],
+  airportsB: Airport[] = [],
+  airlineAName = 'Mapa A',
+  airlineBName = 'Mapa B',
+  customColors?: Record<string, string>
+) {
+  const element = document.getElementById(containerId);
+
+  // Strategy 1: Attempt html2canvas capture of the side-by-side container
+  if (element) {
+    try {
+      const canvas = await html2canvas(element, {
+        useCORS: true,
+        allowTaint: false,
+        scale: 2,
+        logging: false,
+        backgroundColor: '#020617',
+        ignoreElements: (el) => el.id?.includes('-btn-'),
+      });
+
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
+      if (blob && blob.size > 2000) {
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.download = filename;
+        link.href = url;
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(url), 3000);
+        return;
+      }
+    } catch (err) {
+      console.warn('html2canvas capture warning for comparison, switching to High-Res Direct Canvas GIS Engine:', err);
+    }
+  }
+
+  // Strategy 2: Direct High-Res Vector Canvas Renderer for Comparison
+  await exportComparisonDirectCanvas(
+    routesA,
+    routesB,
+    airportsA,
+    airportsB,
+    airlineAName,
+    airlineBName,
+    filename,
+    customColors
+  );
+}
+
+/**
+ * Generates an interactive standalone HTML file for Side-by-Side Comparison with Dual Leaflet Maps
+ */
+export function exportComparisonToStandaloneHtml(
+  routesA: FlightRoute[],
+  routesB: FlightRoute[],
+  airportsA: Airport[],
+  airportsB: Airport[],
+  airlineAName = 'Mapa A',
+  airlineBName = 'Mapa B',
+  title = 'Comparativa Side-by-Side de Rutas Aéreas México',
+  customColors?: Record<string, string>
+) {
+  const routesADataJson = JSON.stringify(
+    routesA.map((r) => ({
+      orig: r.originCode,
+      origName: r.originName,
+      origLat: r.originLat,
+      origLng: r.originLng,
+      dest: r.destCode,
+      destName: r.destName,
+      destLat: r.destLat,
+      destLng: r.destLng,
+      airline: r.airline,
+      flights: r.flightsCount,
+      passengers: r.passengers,
+      distanceKm: r.distanceKm,
+      arc: generateGreatCircleArc([r.originLat, r.originLng], [r.destLat, r.destLng], 25, 0.12),
+    }))
+  );
+
+  const routesBDataJson = JSON.stringify(
+    routesB.map((r) => ({
+      orig: r.originCode,
+      origName: r.originName,
+      origLat: r.originLat,
+      origLng: r.originLng,
+      dest: r.destCode,
+      destName: r.destName,
+      destLat: r.destLat,
+      destLng: r.destLng,
+      airline: r.airline,
+      flights: r.flightsCount,
+      passengers: r.passengers,
+      distanceKm: r.distanceKm,
+      arc: generateGreatCircleArc([r.originLat, r.originLng], [r.destLat, r.destLng], 25, 0.12),
+    }))
+  );
+
+  const airportsAJson = JSON.stringify(airportsA);
+  const airportsBJson = JSON.stringify(airportsB);
+  const customColorsJson = JSON.stringify(customColors || {});
+
+  const htmlContent = `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${title}</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body, html { width: 100%; height: 100%; background: #020617; color: #f8fafc; overflow: hidden; display: flex; flex-direction: column; }
+    .top-bar {
+      height: 60px; background: #0f172a; border-bottom: 1px solid #1e293b;
+      display: flex; align-items: center; justify-content: space-between; padding: 0 20px;
+    }
+    .top-bar h1 { font-size: 16px; font-weight: 700; color: #38bdf8; display: flex; align-items: center; gap: 8px; }
+    .kpis { display: flex; align-items: center; gap: 16px; font-size: 13px; }
+    .kpi-pill { background: #020617; border: 1px solid #334155; padding: 6px 12px; rounded-radius: 8px; border-radius: 8px; }
+    .kpi-pill strong { color: #38bdf8; }
+    .sync-btn {
+      background: #0284c7; color: white; border: none; padding: 6px 12px; border-radius: 8px;
+      font-size: 12px; font-weight: bold; cursor: pointer; transition: 0.2s;
+    }
+    .sync-btn:hover { background: #0369a1; }
+    .dual-container { flex: 1; display: grid; grid-template-columns: 1fr 1fr; position: relative; overflow: hidden; }
+    .map-pane { position: relative; width: 100%; height: 100%; border-right: 1px solid #1e293b; }
+    .map-pane:last-child { border-right: none; }
+    .map-header {
+      position: absolute; top: 12px; left: 12px; z-index: 1000;
+      background: rgba(15, 23, 42, 0.88); backdrop-filter: blur(8px);
+      border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 10px;
+      padding: 8px 14px;
+    }
+    .map-header h3 { font-size: 13px; font-weight: bold; color: #ffffff; }
+    .map-header p { font-size: 11px; color: #94a3b8; }
+    .bottom-legend {
+      height: 90px; background: #0b0f19; border-top: 1px solid #1e293b;
+      padding: 8px 20px; overflow-x: auto; display: flex; flex-direction: column; justify-content: center;
+    }
+    .legend-title { font-size: 11px; font-weight: bold; color: #38bdf8; text-transform: uppercase; margin-bottom: 6px; }
+    .legend-items { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+    .legend-chip { display: flex; align-items: center; gap: 6px; font-size: 11px; font-family: monospace; }
+    .legend-color { width: 16px; height: 8px; border-radius: 2px; border: 1px solid rgba(255,255,255,0.4); }
+  </style>
+</head>
+<body>
+  <div class="top-bar">
+    <div>
+      <h1 style="font-size: 15px; font-weight: 800; color: #38bdf8; margin: 0;">Observatorio de Conectividad Aerocomercial.</h1>
+      <div style="font-size: 11px; font-weight: bold; color: #ffffff; margin-top: 1px;">
+        AGENCIA FEDERAL DE AVIACIÓN CIVIL
+      </div>
+      <div style="font-size: 10px; color: #94a3b8; font-weight: 500;">
+        DIRECCIÓN EJECUTIVA DE TRANSPORTE Y CONTROL AERONÁUTICO &bull; COORDINACIÓN DE CONCESIONES Y TRANSPORTE AÉREO
+      </div>
+    </div>
+    <div class="kpis">
+      <div class="kpi-pill">Rutas: <strong>${routesA.length}</strong> vs <strong>${routesB.length}</strong> (${routesB.length - routesA.length >= 0 ? `+${routesB.length - routesA.length}` : routesB.length - routesA.length})</div>
+      <div class="kpi-pill">Aeropuertos: <strong>${airportsA.length}</strong> vs <strong>${airportsB.length}</strong></div>
+      <button id="btn-sync" class="sync-btn" onclick="toggleSync()">Zoom Sincronizado: ON</button>
+    </div>
+  </div>
+
+  <div class="dual-container">
+    <div class="map-pane">
+      <div class="map-header" style="border-color: #38bdf8;">
+        <h3>MAPA A: ${airlineAName}</h3>
+        <p>${routesA.length} rutas autorizadas • ${airportsA.length} aeropuertos</p>
+      </div>
+      <div id="map-a" style="width:100%; height:100%;"></div>
+    </div>
+
+    <div class="map-pane">
+      <div class="map-header" style="border-color: #c084fc;">
+        <h3>MAPA B: ${airlineBName}</h3>
+        <p>${routesB.length} rutas autorizadas • ${airportsB.length} aeropuertos</p>
+      </div>
+      <div id="map-b" style="width:100%; height:100%;"></div>
+    </div>
+  </div>
+
+  <div class="bottom-legend">
+    <div class="legend-title">VIÑETA CROMÁTICA DE AEROLÍNEAS EN COMPARATIVA</div>
+    <div id="legend-chips" class="legend-items"></div>
+  </div>
+
+  <script>
+    const routesA = ${routesADataJson};
+    const routesB = ${routesBDataJson};
+    const airportsA = ${airportsAJson};
+    const airportsB = ${airportsBJson};
+    const customColors = ${customColorsJson};
+
+    const KNOWN_COLORS = {
+      'aeromexico': '#0284c7',
+      'aerovias de mexico': '#0284c7',
+      'volaris': '#a855f7',
+      'concesionaria vuela': '#a855f7',
+      'vivaaerobus': '#10b981',
+      'viva': '#10b981',
+      'aeroenlaces nacionales': '#10b981',
+      'aerolitoral': '#1d4ed8',
+      'link conexion aerea': '#f59e0b',
+      'tar': '#f59e0b',
+      'aereo calafia': '#ec4899',
+      'calafia': '#ec4899',
+      'estafeta': '#dc2626',
+      'aerotransportes rafilher': '#14b8a6',
+      'aerotransportes mas de carga': '#8b5cf6',
+      'tm aerolineas': '#f97316',
+      'aerotransporte de carga union': '#e11d48',
+      'aerolinea del estado mexicano': '#06b6d4',
+      'mexicana': '#06b6d4',
+      'magnicharters': '#eab308',
+      'interjet': '#3b82f6',
+      'aerus': '#84cc16'
+    };
+
+    const PALETTE = ['#0284c7', '#a855f7', '#10b981', '#f59e0b', '#dc2626', '#06b6d4', '#ec4899', '#14b8a6', '#8b5cf6', '#f97316', '#84cc16', '#1d4ed8'];
+
+    function getColor(airline) {
+      if (!airline) return '#06b6d4';
+      if (customColors[airline]) return customColors[airline];
+      const norm = airline.toLowerCase().trim().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '');
+      for (const [k, v] of Object.entries(KNOWN_COLORS)) {
+        if (norm === k || norm.includes(k) || k.includes(norm)) return v;
+      }
+      let hash = 0;
+      for (let i = 0; i < airline.length; i++) hash = (hash << 5) - hash + airline.charCodeAt(i);
+      return PALETTE[Math.abs(hash) % PALETTE.length];
+    }
+
+    // Populate bottom color vignette
+    const allAirlines = Array.from(new Set([...routesA.map(r => r.airline), ...routesB.map(r => r.airline)])).filter(Boolean);
+    const chipsContainer = document.getElementById('legend-chips');
+    allAirlines.forEach(al => {
+      const color = getColor(al);
+      const chip = document.createElement('div');
+      chip.className = 'legend-chip';
+      chip.innerHTML = '<span class="legend-color" style="background:'+color+'"></span><span>'+al+'</span>';
+      chipsContainer.appendChild(chip);
+    });
+
+    // Create maps
+    const mapA = L.map('map-a', { center: [23.6345, -102.5528], zoom: 5, zoomControl: true });
+    const mapB = L.map('map-b', { center: [23.6345, -102.5528], zoom: 5, zoomControl: true });
+
+    L.tileLayer('https://server.arcgisonline.com/arcgis/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+      attribution: '&copy; Esri &mdash; OpenStreetMap contributors'
+    }).addTo(mapA);
+
+    L.tileLayer('https://server.arcgisonline.com/arcgis/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+      attribution: '&copy; Esri &mdash; OpenStreetMap contributors'
+    }).addTo(mapB);
+
+    function renderMapContent(map, routes, airports) {
+      routes.forEach(r => {
+        const color = getColor(r.airline);
+        L.polyline(r.arc, { color, weight: 3, opacity: 0.8 }).bindPopup(
+          '<div style=\"min-width:180px;\"><strong>' + r.orig + ' ➔ ' + r.dest + '</strong><br/>' +
+          r.origName + ' ➔ ' + r.destName + '<br/>' +
+          '<strong>Aerolínea:</strong> ' + r.airline + '<br/>' +
+          '<strong>Distancia:</strong> ' + Math.round(r.distanceKm) + ' km</div>'
+        ).addTo(map);
+      });
+
+      airports.forEach(a => {
+        L.circleMarker([a.lat, a.lng], {
+          radius: 6, fillColor: '#38bdf8', color: '#ffffff', weight: 1.5, fillOpacity: 0.85
+        }).bindPopup('<strong>' + a.code + '</strong> - ' + a.name).addTo(map);
+      });
+    }
+
+    renderMapContent(mapA, routesA, airportsA);
+    renderMapContent(mapB, routesB, airportsB);
+
+    // Zoom and pan synchronization
+    let isSync = true;
+    let isMoving = false;
+
+    function syncMove(source, target) {
+      if (!isSync || isMoving) return;
+      isMoving = true;
+      target.setView(source.getCenter(), source.getZoom(), { animate: false });
+      isMoving = false;
+    }
+
+    mapA.on('move', () => syncMove(mapA, mapB));
+    mapB.on('move', () => syncMove(mapB, mapA));
+
+    function toggleSync() {
+      isSync = !isSync;
+      const btn = document.getElementById('btn-sync');
+      btn.textContent = 'Zoom Sincronizado: ' + (isSync ? 'ON' : 'OFF');
+      btn.style.background = isSync ? '#0284c7' : '#475569';
+    }
+  </script>
+</body>
+</html>`;
+
+  const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8;' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = 'comparativa_rutas_aereas_mexico.html';
+  link.click();
 }
 
 /**
@@ -699,12 +1302,20 @@ export function exportMapToStandaloneHtml(
 </head>
 <body>
   <div class="header">
-    <h1>✈️ ${title}</h1>
-    <p>Visualización GIS interactiva sobre la República Mexicana</p>
+    <h1>Observatorio de Conectividad Aerocomercial.</h1>
+    <div style="font-size: 13px; font-weight: bold; color: #ffffff; margin-top: 4px;">
+      AGENCIA FEDERAL DE AVIACIÓN CIVIL
+    </div>
+    <div style="font-size: 11.5px; color: #cbd5e1; font-weight: 600; margin-top: 2px;">
+      DIRECCIÓN EJECUTIVA DE TRANSPORTE Y CONTROL AERONÁUTICO
+    </div>
+    <div style="font-size: 11.5px; color: #38bdf8; font-weight: 600;">
+      COORDINACIÓN DE CONCESIONES Y TRANSPORTE AÉREO
+    </div>
   </div>
 
   <div class="stats">
-    <div>Rutas: <span class="stat-val">${routes.length}</span></div>
+    <div>Rutas seleccionadas: <span class="stat-val">${routes.length}</span></div>
     <div>Aeropuertos: <span class="stat-val">${airports.length}</span></div>
   </div>
 
@@ -732,20 +1343,47 @@ export function exportMapToStandaloneHtml(
       attribution: '&copy; Esri &mdash; OpenStreetMap contributors'
     }).addTo(map);
 
-    const defaultAirlineColors = {
-      'Aeroméxico': '#0284c7',
-      'Volaris': '#a855f7',
-      'VivaAerobus': '#10b981',
-      'TAR Aerolíneas': '#f59e0b',
-      'Default': '#06b6d4'
+    const KNOWN_COLORS = {
+      'aeromexico': '#0284c7',
+      'aerovias de mexico': '#0284c7',
+      'volaris': '#a855f7',
+      'concesionaria vuela': '#a855f7',
+      'vivaaerobus': '#10b981',
+      'viva': '#10b981',
+      'aeroenlaces nacionales': '#10b981',
+      'aerolitoral': '#1d4ed8',
+      'link conexion aerea': '#f59e0b',
+      'tar': '#f59e0b',
+      'aereo calafia': '#ec4899',
+      'calafia': '#ec4899',
+      'estafeta': '#dc2626',
+      'aerotransportes rafilher': '#14b8a6',
+      'aerotransportes mas de carga': '#8b5cf6',
+      'tm aerolineas': '#f97316',
+      'aerotransporte de carga union': '#e11d48',
+      'aerolinea del estado mexicano': '#06b6d4',
+      'mexicana': '#06b6d4',
+      'magnicharters': '#eab308',
+      'interjet': '#3b82f6',
+      'aerus': '#84cc16'
     };
 
+    const DYNAMIC_PALETTE = [
+      '#0284c7', '#a855f7', '#10b981', '#f59e0b', '#dc2626', '#06b6d4',
+      '#ec4899', '#14b8a6', '#8b5cf6', '#f97316', '#84cc16', '#1d4ed8',
+      '#d946ef', '#e11d48', '#eab308', '#6366f1'
+    ];
+
     function getColor(airline) {
+      if (!airline) return '#06b6d4';
       if (customColors[airline]) return customColors[airline];
-      for (const [k, v] of Object.entries(customColors)) {
-        if (k.toLowerCase() === (airline || '').toLowerCase()) return v;
+      const norm = airline.toLowerCase().trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      for (const [k, v] of Object.entries(KNOWN_COLORS)) {
+        if (norm === k || norm.includes(k) || k.includes(norm)) return v;
       }
-      return defaultAirlineColors[airline] || defaultAirlineColors['Default'];
+      let hash = 0;
+      for (let i = 0; i < airline.length; i++) hash = (hash << 5) - hash + airline.charCodeAt(i);
+      return DYNAMIC_PALETTE[Math.abs(hash) % DYNAMIC_PALETTE.length];
     }
 
     // Populate Legend
