@@ -262,6 +262,14 @@ export const FlightMap: React.FC<FlightMapProps> = ({
   const mexicoGeoJsonLayerRef = useRef<L.GeoJSON | null>(null);
   const routesLayerGroupRef = useRef<L.LayerGroup | null>(null);
   const airportsLayerGroupRef = useRef<L.LayerGroup | null>(null);
+  const markersByCodeRef = useRef<Map<string, L.Marker>>(new Map());
+  const activeOpenPopupCodeRef = useRef<string | null>(null);
+  const onOpenAirportConnectionsRef = useRef(onOpenAirportConnections);
+  onOpenAirportConnectionsRef.current = onOpenAirportConnections;
+  const onSelectAirportRef = useRef(onSelectAirport);
+  onSelectAirportRef.current = onSelectAirport;
+  const onSelectRouteRef = useRef(onSelectRoute);
+  onSelectRouteRef.current = onSelectRoute;
   const isMovingFromSyncRef = useRef<boolean>(false);
   const [isCapturing, setIsCapturing] = useState<boolean>(false);
   const [captureSuccess, setCaptureSuccess] = useState<boolean>(false);
@@ -328,10 +336,22 @@ export const FlightMap: React.FC<FlightMapProps> = ({
 
   // Clear Mode 2 selected airport if mapMode changes away from routes_by_airline
   useEffect(() => {
+    activeOpenPopupCodeRef.current = null;
     if (mapMode !== 'routes_by_airline') {
       setMode2SelectedAirport(null);
     }
   }, [mapMode]);
+
+  // Open popup when selectedAirportCode is changed externally (e.g. from CompareView selector in Mode 1)
+  useEffect(() => {
+    if (mapMode === 'airports' && selectedAirportCode) {
+      activeOpenPopupCodeRef.current = selectedAirportCode;
+      const targetMarker = markersByCodeRef.current.get(selectedAirportCode);
+      if (targetMarker) {
+        targetMarker.openPopup();
+      }
+    }
+  }, [selectedAirportCode, mapMode]);
 
   // Compute connected routes and airports for Mode 2 when an airport is selected
   const mode2ConnectedRoutes = useMemo(() => {
@@ -704,6 +724,11 @@ export const FlightMap: React.FC<FlightMapProps> = ({
       (mapContainerRef.current as any)._leaflet_map = map;
     }
 
+    map.on('click', () => {
+      activeOpenPopupCodeRef.current = null;
+      setMode2SelectedAirport(null);
+    });
+
     map.on('moveend', () => {
       if (isMovingFromSyncRef.current) {
         isMovingFromSyncRef.current = false;
@@ -789,6 +814,7 @@ export const FlightMap: React.FC<FlightMapProps> = ({
 
     routesLayerGroupRef.current.clearLayers();
     airportsLayerGroupRef.current.clearLayers();
+    markersByCodeRef.current.clear();
 
     // ==========================================
     // MODE 1: VISUALIZACIÓN GENERAL DE AEROPUERTOS Y HUBS
@@ -906,7 +932,7 @@ export const FlightMap: React.FC<FlightMapProps> = ({
           });
 
           polyline.on('click', () => {
-            if (onSelectRoute) onSelectRoute(route);
+            if (onSelectRouteRef.current) onSelectRouteRef.current(route);
           });
 
           mode2RouteEntries.push({
@@ -1096,13 +1122,13 @@ export const FlightMap: React.FC<FlightMapProps> = ({
           });
 
           polyline.on('click', () => {
-            if (onSelectRoute) {
+            if (onSelectRouteRef.current) {
               // Construct or match first route for details modal
               const matchedRoute = routes.find(
                 r => r.originCode === corridor.originCode && r.destCode === corridor.destCode
               );
               if (matchedRoute) {
-                onSelectRoute(matchedRoute);
+                onSelectRouteRef.current(matchedRoute);
               }
             }
           });
@@ -1371,7 +1397,7 @@ export const FlightMap: React.FC<FlightMapProps> = ({
           </div>
         `;
 
-        marker.bindPopup(airportPopupHtml);
+        marker.bindPopup(airportPopupHtml, { closeButton: true, autoPan: true });
 
         marker.on('popupopen', (e) => {
           const popupEl = (e as any)?.popup?.getElement?.() || document.getElementById(`btn-open-connections-${officialCode}`)?.closest('.leaflet-popup');
@@ -1381,21 +1407,20 @@ export const FlightMap: React.FC<FlightMapProps> = ({
               ev.preventDefault();
               ev.stopPropagation();
               const targetCode = btn.getAttribute('data-airport-code') || officialCode;
-              if (onOpenAirportConnections) onOpenAirportConnections(targetCode);
+              if (onOpenAirportConnectionsRef.current) onOpenAirportConnectionsRef.current(targetCode);
               marker.closePopup();
             };
           }
         });
 
-        // Click handlers: 1 click selects and opens popup; double-click opens full connections modal
+        // Click handlers: 1 click immediately opens popup in all modes (in Mode 1 no routes are illuminated; in Mode 2 routes are illuminated and popup stays open)
         marker.on('click', (e) => {
           if (e.originalEvent) {
             L.DomEvent.stopPropagation(e.originalEvent);
           }
+          activeOpenPopupCodeRef.current = officialCode;
           if (mapMode === 'routes_by_airline') {
             setMode2SelectedAirport(officialCode);
-          } else if (mapMode === 'airports') {
-            if (onSelectAirport) onSelectAirport(officialCode);
           }
           marker.openPopup();
         });
@@ -1405,20 +1430,34 @@ export const FlightMap: React.FC<FlightMapProps> = ({
             L.DomEvent.stopPropagation(e.originalEvent);
             L.DomEvent.preventDefault(e.originalEvent);
           }
-          if (onOpenAirportConnections) {
-            onOpenAirportConnections(officialCode);
+          if (onOpenAirportConnectionsRef.current) {
+            onOpenAirportConnectionsRef.current(officialCode);
           }
         });
 
         airportsLayerGroupRef.current?.addLayer(marker);
+        markersByCodeRef.current.set(officialCode, marker);
+        if (airport.code && airport.code !== officialCode) {
+          markersByCodeRef.current.set(airport.code, marker);
+        }
+
+        if (
+          activeOpenPopupCodeRef.current &&
+          (activeOpenPopupCodeRef.current === officialCode || activeOpenPopupCodeRef.current === airport.code)
+        ) {
+          setTimeout(() => {
+            if (mapInstanceRef.current && airportsLayerGroupRef.current?.hasLayer(marker)) {
+              marker.openPopup();
+            }
+          }, 0);
+        }
       });
     }
   }, [
     routes,
+    allRoutes,
     airports,
     mapMode,
-    selectedAirportCode,
-    activeAirportConnections,
     uniqueCorridors,
     arcCurvature,
     colorScheme,
@@ -1441,8 +1480,8 @@ export const FlightMap: React.FC<FlightMapProps> = ({
     mode2ShowConnectedLabels,
     mode2ConnectedAirportCodes,
     mode1AnalysisMode,
-    onOpenAirportConnections,
-    onSelectAirport,
+    mode1SpecificAirline,
+    mode1SpecificAirlineColor,
     isComparePane,
     compareAirlineColor,
   ]);
@@ -1483,7 +1522,7 @@ export const FlightMap: React.FC<FlightMapProps> = ({
       <div id={id} ref={mapContainerRef} className="w-full h-full z-0" />
 
       {/* Floating Map Navigation Controls */}
-      <div className="absolute top-4 right-4 z-[400] flex flex-col gap-1.5 bg-slate-900/90 backdrop-blur-md p-1.5 rounded-xl border border-slate-800 shadow-2xl">
+      <div className={`absolute ${isComparePane ? 'top-4' : 'top-14'} right-4 z-[400] flex flex-col gap-1.5 bg-slate-900/90 backdrop-blur-md p-1.5 rounded-xl border border-slate-800 shadow-2xl`}>
         <button
           id={`${id}-btn-zoom-in`}
           onClick={handleZoomIn}
@@ -1682,7 +1721,7 @@ export const FlightMap: React.FC<FlightMapProps> = ({
                 }
               : {
                   position: 'absolute',
-                  top: '1rem',
+                  top: isComparePane ? '1rem' : '3.5rem',
                   right: '4.25rem',
                   zIndex: 400,
                 }
@@ -2069,7 +2108,7 @@ export const FlightMap: React.FC<FlightMapProps> = ({
                       </div>
 
                       <div className="text-[10px] text-cyan-300/90 bg-cyan-950/40 p-2 rounded-xl border border-cyan-800/50 leading-tight">
-                        ☑ <strong>Selección múltiple con casillas:</strong> Marca 2 o más operadores exclusivos para compararlos simultáneamente.
+                        ☑ <strong>Selección múltiple con casillas:</strong> Marca 2 o más aerolíneas exclusivos para compararlos simultáneamente.
                       </div>
 
                       {/* Exclusive Airlines List with Checkboxes */}

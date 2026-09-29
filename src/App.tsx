@@ -1059,104 +1059,7 @@ export default function App() {
         onLogout={handleAfacLogout}
       />
 
-      {/* Visualizations Navigation Bar (Compact, keeps panel toggle on left and autorizaciones indicator on right) */}
-      <div id="aviation-nav-bar" className="bg-slate-950/95 border-b border-slate-800 px-4 py-2 flex items-center justify-between gap-4 shrink-0 z-20 shadow-sm overflow-x-auto custom-scrollbar">
-        <div className="flex items-center gap-2.5 shrink-0">
-          {/* Toggle Sidebar Button */}
-          <button
-            id="btn-toggle-sidebar"
-            onClick={() => setIsSidebarOpen(prev => !prev)}
-            title={isSidebarOpen ? "Ocultar panel lateral para ampliar el mapa" : "Mostrar panel de filtros, capas y herramientas"}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-900/90 border border-slate-700/80 text-cyan-300 hover:text-white hover:border-cyan-400 hover:bg-slate-800 transition cursor-pointer shadow-sm"
-          >
-            {isSidebarOpen ? (
-              <>
-                <PanelLeftClose className="w-3.5 h-3.5 text-cyan-400" />
-                <span className="hidden md:inline">Ocultar Panel</span>
-              </>
-            ) : (
-              <>
-                <PanelLeftOpen className="w-3.5 h-3.5 text-cyan-400" />
-                <span className="hidden md:inline">Mostrar Panel</span>
-              </>
-            )}
-          </button>
-        </div>
-
-        {/* Right side: Número de Autorizaciones (Superior Derecha) & Hub Indicator */}
-        <div className="flex items-center gap-3 shrink-0">
-          {/* Top N Active Indicator */}
-          {filters.selectedTopN && !selectedHubCode && (
-            <div className="flex items-center gap-2 bg-cyan-950/90 border border-cyan-500/80 px-3 py-1.5 rounded-xl shadow-md shrink-0">
-              <Trophy className="w-3.5 h-3.5 text-amber-400" />
-              <span className="text-slate-300 text-xs font-semibold">Filtro:</span>
-              <span className="font-mono font-bold text-cyan-300 bg-cyan-900 px-2 py-0.5 rounded text-xs border border-cyan-700">
-                Top {filters.selectedTopN}
-              </span>
-              <span className="text-cyan-200 text-xs font-medium max-w-[170px] truncate hidden xl:inline">
-                {filters.selectedTopN} aeropuertos con más rutas
-              </span>
-              <div className="h-4 w-px bg-cyan-800" />
-              <button
-                onClick={() => setFilters((prev) => ({ ...prev, selectedTopN: null }))}
-                className="text-slate-400 hover:text-white text-xs font-medium hover:underline transition cursor-pointer flex items-center gap-1"
-                title="Quitar filtro Top y ver toda la red"
-              >
-                <RotateCcw className="w-3 h-3 text-cyan-400" />
-                <span className="hidden sm:inline">Quitar Top</span>
-              </button>
-            </div>
-          )}
-
-          {selectedHubCode && (
-            <div className="flex items-center gap-2 bg-cyan-950/90 border border-cyan-500/80 px-3 py-1.5 rounded-xl shadow-md shrink-0">
-              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
-              <span className="text-slate-300 text-xs font-semibold">Hub:</span>
-              <span className="font-mono font-bold text-white bg-cyan-900 px-2 py-0.5 rounded text-xs border border-cyan-700">
-                {selectedHubCode}
-              </span>
-              <span className="text-cyan-200 text-xs font-medium max-w-[170px] truncate hidden xl:inline">
-                {top15Airports.find((h) => h.code === selectedHubCode)?.name || top4Hubs.find((h) => h.code === selectedHubCode)?.name}
-              </span>
-              <div className="h-4 w-px bg-cyan-800" />
-              <button
-                onClick={() => setSelectedAirportForConnections(selectedHubCode)}
-                className="text-emerald-400 hover:text-emerald-300 text-xs font-bold hover:underline transition cursor-pointer"
-              >
-                Conexiones
-              </button>
-              <div className="h-4 w-px bg-cyan-800" />
-              <button
-                onClick={handleClearHubFilter}
-                className="text-slate-400 hover:text-white text-xs font-medium hover:underline transition cursor-pointer flex items-center gap-1"
-                title="Restaurar visualización de red completa"
-              >
-                <RotateCcw className="w-3 h-3" />
-              </button>
-            </div>
-          )}
-
-          {/* Número de Autorizaciones posicionado en la parte superior derecha */}
-          <div id="kpi-autorizaciones" className="bg-slate-900/90 border border-slate-800 rounded-xl px-3.5 py-1.5 flex items-center gap-2.5 shadow-sm">
-            <div className="w-7 h-7 rounded-lg bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shrink-0">
-              <Activity className="w-4 h-4" />
-            </div>
-            <div className="flex items-baseline gap-2">
-              <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">
-                Número de Autorizaciones:
-              </span>
-              <span className="text-sm font-black text-amber-400 font-mono leading-tight">
-                {modeStats.authorizations.toLocaleString()}
-              </span>
-              <span className="text-xs font-medium text-slate-400 font-sans">
-                {modeStats.authorizationsSubtitle}
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Main Workspace */}
+      {/* Main Workspace (Sidebar raised directly below Header) */}
       <div className="flex-1 flex overflow-hidden relative">
         {/* Sidebar Controls */}
         <Sidebar
@@ -1227,13 +1130,92 @@ export default function App() {
 
         {/* Center Canvas / Map View */}
         <main className="flex-1 relative flex flex-col h-full overflow-hidden">
+          {/* Transparent Top Horizontal Bar — Only the right-side Número de Autorizaciones badge (and active filter pills) is opaque */}
+          {activeView !== 'compare' && (
+            <div
+              id="aviation-nav-bar"
+              className="absolute top-0 left-0 right-0 px-4 py-2.5 flex items-center justify-end gap-3 bg-transparent border-none pointer-events-none z-[410]"
+            >
+              <div className="flex items-center gap-3 shrink-0 pointer-events-auto">
+                {/* Top N Active Indicator */}
+                {filters.selectedTopN && !selectedHubCode && (
+                  <div className="flex items-center gap-2 bg-cyan-950/95 backdrop-blur-md border border-cyan-500/80 px-3 py-1.5 rounded-xl shadow-lg shrink-0">
+                    <Trophy className="w-3.5 h-3.5 text-amber-400" />
+                    <span className="text-slate-300 text-xs font-semibold">Filtro:</span>
+                    <span className="font-mono font-bold text-cyan-300 bg-cyan-900 px-2 py-0.5 rounded text-xs border border-cyan-700">
+                      Top {filters.selectedTopN}
+                    </span>
+                    <span className="text-cyan-200 text-xs font-medium max-w-[170px] truncate hidden xl:inline">
+                      {filters.selectedTopN} aeropuertos con más rutas
+                    </span>
+                    <div className="h-4 w-px bg-cyan-800" />
+                    <button
+                      onClick={() => setFilters((prev) => ({ ...prev, selectedTopN: null }))}
+                      className="text-slate-400 hover:text-white text-xs font-medium hover:underline transition cursor-pointer flex items-center gap-1"
+                      title="Quitar filtro Top y ver toda la red"
+                    >
+                      <RotateCcw className="w-3 h-3 text-cyan-400" />
+                      <span className="hidden sm:inline">Quitar Top</span>
+                    </button>
+                  </div>
+                )}
+
+                {selectedHubCode && (
+                  <div className="flex items-center gap-2 bg-cyan-950/95 backdrop-blur-md border border-cyan-500/80 px-3 py-1.5 rounded-xl shadow-lg shrink-0">
+                    <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
+                    <span className="text-slate-300 text-xs font-semibold">Hub:</span>
+                    <span className="font-mono font-bold text-white bg-cyan-900 px-2 py-0.5 rounded text-xs border border-cyan-700">
+                      {selectedHubCode}
+                    </span>
+                    <span className="text-cyan-200 text-xs font-medium max-w-[170px] truncate hidden xl:inline">
+                      {top15Airports.find((h) => h.code === selectedHubCode)?.name || top4Hubs.find((h) => h.code === selectedHubCode)?.name}
+                    </span>
+                    <div className="h-4 w-px bg-cyan-800" />
+                    <button
+                      onClick={() => setSelectedAirportForConnections(selectedHubCode)}
+                      className="text-emerald-400 hover:text-emerald-300 text-xs font-bold hover:underline transition cursor-pointer"
+                    >
+                      Conexiones
+                    </button>
+                    <div className="h-4 w-px bg-cyan-800" />
+                    <button
+                      onClick={handleClearHubFilter}
+                      className="text-slate-400 hover:text-white text-xs font-medium hover:underline transition cursor-pointer flex items-center gap-1"
+                      title="Restaurar visualización de red completa"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                    </button>
+                  </div>
+                )}
+
+                {/* Número de Autorizaciones posicionado en la parte superior derecha (no transparente) */}
+                <div id="kpi-autorizaciones" className="bg-slate-900 border border-slate-700/90 rounded-xl px-3.5 py-1.5 flex items-center gap-2.5 shadow-xl">
+                  <div className="w-7 h-7 rounded-lg bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shrink-0">
+                    <Activity className="w-4 h-4" />
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+                      Número de Autorizaciones:
+                    </span>
+                    <span className="text-sm font-black text-amber-400 font-mono leading-tight">
+                      {modeStats.authorizations.toLocaleString()}
+                    </span>
+                    <span className="text-xs font-medium text-slate-400 font-sans">
+                      {modeStats.authorizationsSubtitle}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Floating Show Sidebar Button when sidebar is collapsed */}
           {!isSidebarOpen && (
             <button
               id="btn-show-sidebar-floating"
               onClick={() => setIsSidebarOpen(true)}
               title="Mostrar panel (filtros, capas, vistas y carga)"
-              className="absolute top-4 left-4 z-[400] flex items-center gap-2 bg-slate-900/95 hover:bg-slate-850 text-cyan-300 hover:text-cyan-200 border border-cyan-500/50 hover:border-cyan-400 shadow-2xl px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer backdrop-blur-md group animate-fade-in"
+              className="absolute top-2.5 left-4 z-[420] flex items-center gap-2 bg-slate-900/95 hover:bg-slate-850 text-cyan-300 hover:text-cyan-200 border border-cyan-500/50 hover:border-cyan-400 shadow-2xl px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer backdrop-blur-md group animate-fade-in"
             >
               <PanelLeftOpen className="w-4 h-4 text-cyan-400 group-hover:scale-110 transition-transform" />
               <span>Mostrar Filtros y Herramientas</span>
