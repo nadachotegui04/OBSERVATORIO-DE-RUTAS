@@ -728,7 +728,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
                     <p className="text-[11px] text-slate-300 leading-relaxed border-t border-slate-800/80 pt-2">
                       {uniqueAnalysisMode === 'general'
-                        ? 'a) Análisis general: Muestra todos los 346 tramos consolidados clasificados por 1 sola aerolínea autorizada (operador único) vs 2 o más aerolíneas autorizadas. La lista de aerolíneas se oculta en el menú.'
+                        ? 'a) Análisis general: Muestra todos los 346 tramos consolidados clasificados por 1 sola aerolínea autorizada (177 de operador único) vs 2 o más aerolíneas autorizadas (169 compartidas). La lista de aerolíneas se oculta en el menú.'
                         : 'b) Análisis específico: Te permite elegir aerolíneas individuales con colores personalizados y resalta rutas exclusivas de una sola aerolínea o compartidas por 2 o más aerolíneas.'}
                     </p>
 

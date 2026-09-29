@@ -1231,8 +1231,8 @@ export const FlightMap: React.FC<FlightMapProps> = ({
         const activeAirportRoutes = routes.filter(
           r => airportMatchCodes.has(r.originCode) || airportMatchCodes.has(r.destCode)
         );
-        const activeAirlinesAtAirport = Array.from(
-          new Set(activeAirportRoutes.map(r => r.airline).filter(Boolean))
+        const activeAirlinesAtAirport: string[] = Array.from(
+          new Set(activeAirportRoutes.map(r => r.airline).filter((a): a is string => Boolean(a)))
         );
 
         const isMode2 = mapMode === 'routes_by_airline';
@@ -1253,7 +1253,7 @@ export const FlightMap: React.FC<FlightMapProps> = ({
           } else {
             // Mode 1: Color específico para 2 o más aerolíneas que tengan ese aeropuerto,
             // y color diferente para cada aerolínea con posibilidad de cambiarlo
-            const effectiveAirlines = activeAirlinesAtAirport.length > 0
+            const effectiveAirlines: string[] = activeAirlinesAtAirport.length > 0
               ? activeAirlinesAtAirport
               : airlinesList.map(([a]) => a);
 
@@ -1263,7 +1263,7 @@ export const FlightMap: React.FC<FlightMapProps> = ({
               radius = 8.5;
             } else if (effectiveAirlines.length === 1) {
               const soleAirline = effectiveAirlines[0];
-              const aColor = getAirlineColor(soleAirline, customAirlineColors);
+              const aColor = getAirlineColor(soleAirline || '', customAirlineColors);
               pinColor = aColor;
               shadowGlow = `12px ${aColor}`;
               radius = 8;
@@ -2164,7 +2164,7 @@ export const FlightMap: React.FC<FlightMapProps> = ({
                   {uniqueAnalysisMode === 'general' ? (
                     <div className="space-y-2 py-1 overflow-y-auto">
                       <div className="text-[10px] text-slate-400 leading-snug">
-                        En el <strong>Análisis general</strong> no se muestran aerolíneas individuales. Todos los 346 tramos consolidados se diferencian únicamente por si cuentan con 1 sola aerolínea autorizada o 2 o más:
+                        En el <strong>Análisis general</strong> no se muestran aerolíneas individuales. Todos los {uniqueCorridors.length || 346} tramos consolidados se diferencian únicamente por si cuentan con 1 sola aerolínea autorizada ({singleCorridorsCount}) o 2 o más ({multiCorridorsCount}):
                       </div>
 
                       {/* Color 1: 1 sola aerolínea */}

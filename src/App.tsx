@@ -397,9 +397,10 @@ export default function App() {
           const isObservatorioOnly = cloudData.routes.every(
             (r: any) => r.sheetName === 'Observatorio de Rutas' || !r.sheetName
           );
+          const enrichedRoutes = sanitizeAndEnrichRoutes(cloudData.routes);
+          const cloudCorridors = getUniqueRouteCorridors(enrichedRoutes);
 
-          if (isObservatorioOnly && cloudData.routes.length === 655) {
-            const enrichedRoutes = sanitizeAndEnrichRoutes(cloudData.routes);
+          if (isObservatorioOnly && cloudData.routes.length === 655 && cloudCorridors.length === 346) {
             setAllRoutes(enrichedRoutes);
             const activeName = cloudData.fileName === 'Observatorio_de_Rutas_AFAC.xlsx'
               ? '2026_08_27 Arline Routes AR.xlsx'
@@ -418,7 +419,7 @@ export default function App() {
               );
             } catch {}
           } else {
-            // Restore official dataset with exact 655 routes from Observatorio de Rutas
+            // Restore official dataset with exact 655 routes from Observatorio de Rutas (346 corridors, 177 single)
             const officialRoutes = sanitizeAndEnrichRoutes(officialRoutesJson as FlightRoute[]);
             setAllRoutes(officialRoutes);
             setFileName('2026_08_27 Arline Routes AR.xlsx');
@@ -873,10 +874,8 @@ export default function App() {
     if (mapMode === 'unique_routes') {
       const singleAirline =
         filters.selectedAirlines.length === 1 ? filters.selectedAirlines[0] : null;
-      // In general unique routes mode (all airlines or no single airline selected), rectified count is strictly 346
-      const count = (filters.selectedAirlines.length > 0 && !filters.selectedAirlines.includes('__NONE__'))
-        ? uniqueAuthorizationsCount
-        : 346;
+      // In unique routes mode, count dynamically reflects uniqueAuthorizationsCount (346 unique corridors for full Excel dataset)
+      const count = uniqueAuthorizationsCount;
       return {
         authorizations: count,
         authorizationsSubtitle: singleAirline
