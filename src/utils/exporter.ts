@@ -165,7 +165,7 @@ async function exportMapDirectCanvas(
 
   ctx.fillStyle = '#38bdf8';
   ctx.font = '900 24px -apple-system, sans-serif';
-  ctx.fillText('Observatorio de Conectividad Aerocomercial.', 65, 76);
+  ctx.fillText('Observatorio de Conectividad Aerocomercial', 65, 76);
 
   ctx.fillStyle = '#ffffff';
   ctx.font = 'bold 15px -apple-system, sans-serif';
@@ -236,6 +236,322 @@ async function exportMapDirectCanvas(
   setTimeout(() => URL.revokeObjectURL(url), 4000);
 }
 
+export interface MapCaptureOptions {
+  modeName?: string;
+  legendContainer?: HTMLElement | null;
+  showWatermark?: boolean;
+}
+
+/**
+ * High-fidelity GIS Leaflet Map to Canvas rasterizer.
+ * Captures the true, live visual state of the Leaflet map container:
+ * - Real basemap tiles (Republic of Mexico, states, topography)
+ * - Exact vector flight arcs / radial connections currently visible
+ * - Real airport pins and glowing auras
+ * - Tooltip badges and IATA codes
+ * - Institutional AFAC watermark header
+ * - Dynamic color legend / palette vignette
+ */
+export async function captureLeafletMapToCanvas(
+  container: HTMLElement | string,
+  options?: MapCaptureOptions
+): Promise<HTMLCanvasElement> {
+  const rootEl = typeof container === 'string' ? document.getElementById(container) : container;
+  if (!rootEl) {
+    throw new Error('No se encontró el contenedor del mapa para captura.');
+  }
+
+  // Find the Leaflet map container
+  const mapDiv: HTMLElement = rootEl.classList.contains('leaflet-container')
+    ? rootEl
+    : (rootEl.querySelector<HTMLElement>('.leaflet-container') || rootEl);
+
+  const contRect = mapDiv.getBoundingClientRect();
+  const width = Math.max(300, Math.round(contRect.width || mapDiv.clientWidth || 1280));
+  const height = Math.max(300, Math.round(contRect.height || mapDiv.clientHeight || 720));
+  const scale = 2; // High-resolution retina 2K/4K
+
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(width * scale);
+  canvas.height = Math.round(height * scale);
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('No se pudo inicializar contexto 2D para captura cartográfica.');
+
+  ctx.scale(scale, scale);
+
+  // 1. Base dark aviation radar background
+  ctx.fillStyle = '#0b0f19';
+  ctx.fillRect(0, 0, width, height);
+
+  // 2. Render all visible Basemap Tiles (Republic of Mexico and World Basemap)
+  const tileImages = Array.from(mapDiv.querySelectorAll<HTMLImageElement>('.leaflet-tile-pane img.leaflet-tile'));
+  for (const img of tileImages) {
+    if (!img.complete || img.naturalWidth === 0) continue;
+    const imgRect = img.getBoundingClientRect();
+    const dx = imgRect.left - contRect.left;
+    const dy = imgRect.top - contRect.top;
+    const dw = imgRect.width;
+    const dh = imgRect.height;
+
+    // Only draw tiles within current viewport bounds
+    if (dx + dw > 0 && dx < width && dy + dh > 0 && dy < height) {
+      const opacityStr = window.getComputedStyle(img).opacity;
+      const opacity = opacityStr ? parseFloat(opacityStr) : 1;
+      ctx.save();
+      ctx.globalAlpha = isNaN(opacity) ? 1 : opacity;
+      try {
+        ctx.drawImage(img, dx, dy, dw, dh);
+      } catch (e) {
+        console.warn('Advertencia al renderizar tesela en canvas:', e);
+      }
+      ctx.restore();
+    }
+  }
+
+  // 3. Render Vector Flight Arcs and Radial Routes (SVG Paths)
+  const svgs = Array.from(mapDiv.querySelectorAll<SVGSVGElement>('.leaflet-overlay-pane svg'));
+  for (const svg of svgs) {
+    const svgRect = svg.getBoundingClientRect();
+    const ox = svgRect.left - contRect.left;
+    const oy = svgRect.top - contRect.top;
+
+    const paths = Array.from(svg.querySelectorAll('path'));
+    for (const path of paths) {
+      const d = path.getAttribute('d');
+      if (!d) continue;
+
+      const computed = window.getComputedStyle(path);
+      const stroke = path.getAttribute('stroke') || computed.stroke;
+      const strokeWidth = parseFloat(path.getAttribute('stroke-width') || computed.strokeWidth || '2');
+      const opacity = parseFloat(path.getAttribute('stroke-opacity') || computed.strokeOpacity || '1');
+      const fill = path.getAttribute('fill') || computed.fill;
+      const fillOpacity = parseFloat(path.getAttribute('fill-opacity') || computed.fillOpacity || '0');
+      const dashArray = path.getAttribute('stroke-dasharray') || computed.strokeDasharray;
+
+      ctx.save();
+      ctx.translate(ox, oy);
+      const p2d = new Path2D(d);
+
+      if (fill && fill !== 'none' && fill !== 'transparent') {
+        ctx.fillStyle = fill;
+        ctx.globalAlpha = isNaN(fillOpacity) ? 1 : fillOpacity;
+        ctx.fill(p2d);
+      }
+
+      if (stroke && stroke !== 'none' && stroke !== 'transparent') {
+        ctx.strokeStyle = stroke;
+        ctx.lineWidth = strokeWidth;
+        ctx.globalAlpha = isNaN(opacity) ? 1 : opacity;
+        ctx.lineCap = (computed.strokeLinecap as CanvasLineCap) || 'round';
+        ctx.lineJoin = (computed.strokeLinejoin as CanvasLineJoin) || 'round';
+        if (dashArray && dashArray !== 'none') {
+          const dashes = dashArray
+            .split(/[\s,]+/)
+            .map((s) => parseFloat(s.trim()))
+            .filter((n) => !isNaN(n));
+          if (dashes.length > 0) ctx.setLineDash(dashes);
+        }
+        ctx.stroke(p2d);
+      }
+      ctx.restore();
+    }
+  }
+
+  // 4. Render Airport Pins and Glows
+  const markers = Array.from(mapDiv.querySelectorAll<HTMLElement>('.leaflet-marker-pane .leaflet-marker-icon'));
+  for (const marker of markers) {
+    const mRect = marker.getBoundingClientRect();
+    const mx = mRect.left - contRect.left;
+    const my = mRect.top - contRect.top;
+    const mw = mRect.width;
+    const mh = mRect.height;
+
+    if (mx + mw < 0 || mx > width || my + mh < 0 || my > height) continue;
+
+    const pin = marker.querySelector<HTMLElement>('.airport-pin');
+    if (pin) {
+      const pinStyle = window.getComputedStyle(pin);
+      const pinBg = pin.style.backgroundColor || pinStyle.backgroundColor || '#0ea5e9';
+      const pinBorder = pin.style.border || pinStyle.border || '2px solid #ffffff';
+      const pinRadius = Math.max(3, Math.min(15, (pin.clientWidth || mw) / 2));
+      const cx = mx + mw / 2;
+      const cy = my + mh / 2;
+
+      ctx.save();
+      // Glowing radar aura
+      ctx.fillStyle = pinBg;
+      ctx.globalAlpha = 0.35;
+      ctx.beginPath();
+      ctx.arc(cx, cy, pinRadius * 2.2, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Main pin node
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = pinBg;
+      ctx.beginPath();
+      ctx.arc(cx, cy, pinRadius, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Border outline
+      ctx.strokeStyle = pinBorder.includes('64748b') ? '#64748b' : '#ffffff';
+      ctx.lineWidth = 1.8;
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  // 5. Render Airport Labels and Tooltips
+  const tooltips = Array.from(mapDiv.querySelectorAll<HTMLElement>('.leaflet-tooltip-pane .leaflet-tooltip'));
+  for (const tt of tooltips) {
+    const tRect = tt.getBoundingClientRect();
+    const tx = tRect.left - contRect.left;
+    const ty = tRect.top - contRect.top;
+    const tw = tRect.width;
+    const th = tRect.height;
+
+    if (tx + tw < 0 || tx > width || ty + th < 0 || ty > height) continue;
+
+    const rawText = tt.innerText.trim().replace(/\s+/g, ' ');
+    if (!rawText) continue;
+
+    const innerBadge = tt.querySelector<HTMLElement>('.airport-iata-badge');
+    const computed = innerBadge ? window.getComputedStyle(innerBadge) : null;
+    const borderColor = computed?.borderColor || innerBadge?.style.borderColor || 'rgba(56, 189, 248, 0.7)';
+    const textColor = computed?.color || innerBadge?.style.color || '#38bdf8';
+    const fontSize = computed?.fontSize || innerBadge?.style.fontSize || '11px';
+
+    ctx.save();
+    ctx.fillStyle = 'rgba(10, 15, 26, 0.94)';
+    ctx.strokeStyle = borderColor;
+    ctx.lineWidth = 1.2;
+
+    ctx.beginPath();
+    ctx.roundRect(tx, ty, tw, th, 5);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = textColor;
+    ctx.font = `800 ${fontSize} "JetBrains Mono", monospace, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(rawText, tx + tw / 2, ty + th / 2);
+    ctx.restore();
+  }
+
+  // 6. Institutional AFAC Watermark Header
+  if (options?.showWatermark !== false) {
+    ctx.save();
+    const bannerW = Math.min(width - 32, 470);
+    const bannerH = 68;
+    const bx = 16;
+    const by = 16;
+
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.90)';
+    ctx.strokeStyle = 'rgba(56, 189, 248, 0.35)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(bx, by, bannerW, bannerH, 10);
+    ctx.fill();
+    ctx.stroke();
+
+    // Cyan vertical accent bar
+    ctx.fillStyle = '#38bdf8';
+    ctx.beginPath();
+    ctx.roundRect(bx, by, 4, bannerH, [10, 0, 0, 10]);
+    ctx.fill();
+
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = 'bold 9.5px "Plus Jakarta Sans", sans-serif';
+    ctx.fillText('AGENCIA FEDERAL DE AVIACIÓN CIVIL', bx + 14, by + 18);
+
+    ctx.fillStyle = '#38bdf8';
+    ctx.font = '800 13.5px "Plus Jakarta Sans", sans-serif';
+    ctx.fillText('Observatorio de Conectividad Aerocomercial', bx + 14, by + 36);
+
+    ctx.fillStyle = '#cbd5e1';
+    ctx.font = '600 10.5px "Plus Jakarta Sans", sans-serif';
+    const modeSubtitle = options?.modeName || 'Dirección Ejecutiva de Transporte y Control Aeronáutico';
+    ctx.fillText(modeSubtitle, bx + 14, by + 53);
+
+    ctx.restore();
+  }
+
+  // 7. Dynamic Color Legend Vignette
+  const legendBox =
+    options?.legendContainer ||
+    rootEl.querySelector<HTMLElement>('[class*="items-end"]') ||
+    document.querySelector<HTMLElement>('[class*="items-end"]');
+
+  if (legendBox) {
+    const items = Array.from(legendBox.querySelectorAll<HTMLElement>('.flex.items-center.justify-between, .flex.items-center.gap-2'));
+    const legendRows: { color: string; label: string; count?: string }[] = [];
+
+    items.forEach((item) => {
+      const colorDot = item.querySelector<HTMLElement>('[style*="background"], span.rounded-full');
+      const labelEl = item.querySelector<HTMLElement>('span.font-bold, span.truncate, span.text-slate-200');
+      const countEl = item.querySelector<HTMLElement>('span.font-mono, span.text-slate-400');
+
+      if (labelEl && labelEl.innerText.trim()) {
+        let color = '#38bdf8';
+        if (colorDot) {
+          color = colorDot.style.backgroundColor || window.getComputedStyle(colorDot).backgroundColor || '#38bdf8';
+        }
+        legendRows.push({
+          color,
+          label: labelEl.innerText.trim(),
+          count: countEl?.innerText.trim(),
+        });
+      }
+    });
+
+    if (legendRows.length > 0) {
+      ctx.save();
+      const rowsToDraw = legendRows.slice(0, 12);
+      const legW = Math.min(270, width - 40);
+      const legH = 34 + rowsToDraw.length * 20;
+      const lx = width - legW - 16;
+      const ly = height - legH - 16;
+
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.92)';
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.3)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.roundRect(lx, ly, legW, legH, 10);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#38bdf8';
+      ctx.font = 'bold 10px "Plus Jakarta Sans", sans-serif';
+      ctx.fillText('NOMENCLATURA CROMÁTICA', lx + 12, ly + 18);
+
+      rowsToDraw.forEach((row, i) => {
+        const ry = ly + 36 + i * 20;
+        ctx.fillStyle = row.color;
+        ctx.beginPath();
+        ctx.arc(lx + 16, ry - 3, 5, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#f8fafc';
+        ctx.font = 'bold 10px "Plus Jakarta Sans", sans-serif';
+        const labelText = row.label.length > 22 ? row.label.slice(0, 20) + '…' : row.label;
+        ctx.fillText(labelText, lx + 28, ry);
+
+        if (row.count) {
+          ctx.fillStyle = '#94a3b8';
+          ctx.font = '9px monospace';
+          ctx.textAlign = 'right';
+          ctx.fillText(row.count, lx + legW - 12, ry);
+          ctx.textAlign = 'left';
+        }
+      });
+
+      ctx.restore();
+    }
+  }
+
+  return canvas;
+}
+
 /**
  * Exports DOM element (the map container) to a PNG image file with automatic fail-safe fallback
  */
@@ -244,21 +560,57 @@ export async function exportMapToImage(
   filename = 'mapa_rutas_mexico.png',
   routes?: FlightRoute[],
   airports?: Airport[],
-  customColors?: Record<string, string>
+  customColors?: Record<string, string>,
+  options?: MapCaptureOptions
 ) {
-  const element = document.getElementById(elementId);
+  const element = document.getElementById(elementId) || document.querySelector<HTMLElement>('.leaflet-container');
 
-  // Strategy 1: Attempt html2canvas capture
+  // Strategy 1: Dedicated GIS Leaflet Map to Canvas Engine (Captures exactly what is rendered)
   if (element) {
+    try {
+      const canvas = await captureLeafletMapToCanvas(element, options);
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
+      if (blob && blob.size > 2000) {
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.download = filename;
+        link.href = url;
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(url), 4000);
+        return;
+      }
+    } catch (err) {
+      console.warn('captureLeafletMapToCanvas warning, trying html2canvas fallback:', err);
+    }
+
+    // Strategy 2: Attempt html2canvas capture with 3D transform flattening
     try {
       const canvas = await html2canvas(element, {
         useCORS: true,
-        allowTaint: false,
+        allowTaint: true,
         scale: 2, // High resolution
         logging: false,
         backgroundColor: '#020617',
         ignoreElements: (el) => {
-          return el.id?.includes('-btn-');
+          return Boolean(el.id?.includes('-btn-'));
+        },
+        onclone: (_clonedDoc, clonedElement) => {
+          const allTransformed = clonedElement.querySelectorAll<HTMLElement>('*');
+          allTransformed.forEach((el) => {
+            const transform = el.style.transform;
+            if (transform && transform.includes('translate3d')) {
+              const match = transform.match(/translate3d\(([-\d.]+)px,\s*([-\d.]+)px/);
+              if (match) {
+                const tx = parseFloat(match[1]);
+                const ty = parseFloat(match[2]);
+                el.style.transform = 'none';
+                const curL = parseFloat(el.style.left || '0') || 0;
+                const curT = parseFloat(el.style.top || '0') || 0;
+                el.style.left = `${curL + tx}px`;
+                el.style.top = `${curT + ty}px`;
+              }
+            }
+          });
         },
       });
 
@@ -269,7 +621,7 @@ export async function exportMapToImage(
         link.download = filename;
         link.href = url;
         link.click();
-        setTimeout(() => URL.revokeObjectURL(url), 3000);
+        setTimeout(() => URL.revokeObjectURL(url), 4000);
         return;
       }
     } catch (err) {
@@ -277,7 +629,7 @@ export async function exportMapToImage(
     }
   }
 
-  // Strategy 2: Direct High-Res Vector Canvas Renderer
+  // Strategy 3: Direct High-Res Vector Canvas Renderer
   await exportMapDirectCanvas(routes, airports, filename, customColors);
 }
 
@@ -320,7 +672,7 @@ async function exportComparisonDirectCanvas(
   // Header Title
   ctx.fillStyle = '#38bdf8';
   ctx.font = '900 24px -apple-system, sans-serif';
-  ctx.fillText('Observatorio de Conectividad Aerocomercial. — Comparativa Side-by-Side', 50, 42);
+  ctx.fillText('Observatorio de Conectividad Aerocomercial — Comparativa Side-by-Side', 50, 42);
 
   ctx.fillStyle = '#ffffff';
   ctx.font = 'bold 15px -apple-system, sans-serif';
@@ -566,20 +918,168 @@ export async function exportComparisonToImage(
   airportsB: Airport[] = [],
   airlineAName = 'Mapa A',
   airlineBName = 'Mapa B',
-  customColors?: Record<string, string>
+  customColors?: Record<string, string>,
+  options?: { modeName?: string }
 ) {
-  const element = document.getElementById(containerId);
+  const mapA = document.getElementById('compare-map-a');
+  const mapB = document.getElementById('compare-map-b');
 
-  // Strategy 1: Attempt html2canvas capture of the side-by-side container
+  // Strategy 1: Dedicated GIS Multi-Map Canvas Compositor
+  if (mapA && mapB) {
+    try {
+      const [canvasA, canvasB] = await Promise.all([
+        captureLeafletMapToCanvas(mapA, {
+          modeName: `Mapa A: ${airlineAName}`,
+          showWatermark: false,
+        }),
+        captureLeafletMapToCanvas(mapB, {
+          modeName: `Mapa B: ${airlineBName}`,
+          showWatermark: false,
+        }),
+      ]);
+
+      const headerH = 130 * 2; // retina 2x
+      const width = canvasA.width + canvasB.width;
+      const height = Math.max(canvasA.height, canvasB.height) + headerH;
+
+      const dualCanvas = document.createElement('canvas');
+      dualCanvas.width = width;
+      dualCanvas.height = height;
+      const ctx = dualCanvas.getContext('2d');
+      if (!ctx) throw new Error('No se pudo inicializar canvas comparativo dual.');
+
+      // Deep dark background
+      ctx.fillStyle = '#020617';
+      ctx.fillRect(0, 0, width, height);
+
+      // Top Institutional Comparison Bar
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(0, 0, width, headerH);
+      ctx.strokeStyle = '#1e293b';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, headerH);
+      ctx.lineTo(width, headerH);
+      ctx.stroke();
+
+      // AFAC Institutional Title
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 22px "Plus Jakarta Sans", sans-serif';
+      ctx.fillText('AGENCIA FEDERAL DE AVIACIÓN CIVIL', 40, 42);
+
+      ctx.fillStyle = '#38bdf8';
+      ctx.font = '800 28px "Plus Jakarta Sans", sans-serif';
+      ctx.fillText('Observatorio de Conectividad Aerocomercial — Comparativa Side-by-Side', 40, 80);
+
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = 'bold 16px "Plus Jakarta Sans", sans-serif';
+      ctx.fillText(
+        'DIRECCIÓN EJECUTIVA DE TRANSPORTE Y CONTROL AERONÁUTICO • COORDINACIÓN DE CONCESIONES Y TRANSPORTE AÉREO',
+        40,
+        115
+      );
+
+      // Right Stats & Deltas
+      const routeDelta = routesB.length - routesA.length;
+      const airportDelta = airportsB.length - airportsA.length;
+      ctx.fillStyle = '#38bdf8';
+      ctx.font = 'bold 20px monospace, sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText(
+        `Rutas: ${routesA.length} vs ${routesB.length} (${routeDelta >= 0 ? `+${routeDelta}` : routeDelta})  |  Aeropuertos: ${airportsA.length} vs ${airportsB.length} (${airportDelta >= 0 ? `+${airportDelta}` : airportDelta})`,
+        width - 40,
+        60
+      );
+      if (options?.modeName) {
+        ctx.fillStyle = '#cbd5e1';
+        ctx.font = 'bold 16px "Plus Jakarta Sans", sans-serif';
+        ctx.fillText(options.modeName, width - 40, 95);
+      }
+      ctx.textAlign = 'left';
+
+      // Draw Map A on Left
+      ctx.drawImage(canvasA, 0, headerH);
+
+      // Draw Map B on Right
+      const paneW = canvasA.width;
+      ctx.drawImage(canvasB, paneW, headerH);
+
+      // Vertical separator
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(paneW, headerH);
+      ctx.lineTo(paneW, height);
+      ctx.stroke();
+
+      // Pane A Badge
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.7)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(24, headerH + 20, 420, 52, 12);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#38bdf8';
+      ctx.font = 'bold 18px "Plus Jakarta Sans", sans-serif';
+      ctx.fillText(`MAPA A: ${airlineAName}`, 42, headerH + 53);
+
+      // Pane B Badge
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+      ctx.strokeStyle = 'rgba(16, 185, 129, 0.7)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(paneW + 24, headerH + 20, 420, 52, 12);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#34d399';
+      ctx.font = 'bold 18px "Plus Jakarta Sans", sans-serif';
+      ctx.fillText(`MAPA B: ${airlineBName}`, paneW + 42, headerH + 53);
+
+      const blob = await new Promise<Blob | null>((resolve) => dualCanvas.toBlob(resolve, 'image/png'));
+      if (blob && blob.size > 2000) {
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.download = filename;
+        link.href = url;
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(url), 4000);
+        return;
+      }
+    } catch (err) {
+      console.warn('captureLeafletMapToCanvas dual error, attempting fallback:', err);
+    }
+  }
+
+  // Strategy 2: Attempt html2canvas capture of the side-by-side container
+  const element = document.getElementById(containerId);
   if (element) {
     try {
       const canvas = await html2canvas(element, {
         useCORS: true,
-        allowTaint: false,
+        allowTaint: true,
         scale: 2,
         logging: false,
         backgroundColor: '#020617',
-        ignoreElements: (el) => el.id?.includes('-btn-'),
+        ignoreElements: (el) => Boolean(el.id?.includes('-btn-')),
+        onclone: (_clonedDoc, clonedElement) => {
+          const allTransformed = clonedElement.querySelectorAll<HTMLElement>('*');
+          allTransformed.forEach((el) => {
+            const transform = el.style.transform;
+            if (transform && transform.includes('translate3d')) {
+              const match = transform.match(/translate3d\(([-\d.]+)px,\s*([-\d.]+)px/);
+              if (match) {
+                const tx = parseFloat(match[1]);
+                const ty = parseFloat(match[2]);
+                el.style.transform = 'none';
+                const curL = parseFloat(el.style.left || '0') || 0;
+                const curT = parseFloat(el.style.top || '0') || 0;
+                el.style.left = `${curL + tx}px`;
+                el.style.top = `${curT + ty}px`;
+              }
+            }
+          });
+        },
       });
 
       const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
@@ -589,7 +1089,7 @@ export async function exportComparisonToImage(
         link.download = filename;
         link.href = url;
         link.click();
-        setTimeout(() => URL.revokeObjectURL(url), 3000);
+        setTimeout(() => URL.revokeObjectURL(url), 4000);
         return;
       }
     } catch (err) {
@@ -597,7 +1097,7 @@ export async function exportComparisonToImage(
     }
   }
 
-  // Strategy 2: Direct High-Res Vector Canvas Renderer for Comparison
+  // Strategy 3: Direct High-Res Vector Canvas Renderer for Comparison
   await exportComparisonDirectCanvas(
     routesA,
     routesB,
@@ -711,7 +1211,7 @@ export function exportComparisonToStandaloneHtml(
 <body>
   <div class="top-bar">
     <div>
-      <h1 style="font-size: 15px; font-weight: 800; color: #38bdf8; margin: 0;">Observatorio de Conectividad Aerocomercial.</h1>
+      <h1 style="font-size: 15px; font-weight: 800; color: #38bdf8; margin: 0;">Observatorio de Conectividad Aerocomercial</h1>
       <div style="font-size: 11px; font-weight: bold; color: #ffffff; margin-top: 1px;">
         AGENCIA FEDERAL DE AVIACIÓN CIVIL
       </div>
@@ -1302,7 +1802,7 @@ export function exportMapToStandaloneHtml(
 </head>
 <body>
   <div class="header">
-    <h1>Observatorio de Conectividad Aerocomercial.</h1>
+    <h1>Observatorio de Conectividad Aerocomercial</h1>
     <div style="font-size: 13px; font-weight: bold; color: #ffffff; margin-top: 4px;">
       AGENCIA FEDERAL DE AVIACIÓN CIVIL
     </div>

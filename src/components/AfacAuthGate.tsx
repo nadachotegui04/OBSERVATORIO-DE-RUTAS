@@ -100,17 +100,14 @@ export const AfacAuthGate: React.FC<AfacAuthGateProps> = ({ onLoginSuccess }) =>
           <p className="text-xs sm:text-sm font-bold text-cyan-300 tracking-wide mt-0.5">
             Coordinación de Concesiones y Transporte Aéreo
           </p>
-          <div className="mt-2.5 pt-2 border-t border-slate-800">
-            <h3 className="text-base sm:text-lg font-black text-white tracking-tight">
-              <span className="text-cyan-400">Observatorio de Conectividad Aerocomercial.</span>
+          <div className="mt-3 pt-2.5 border-t border-slate-800/80">
+            <h3 className="text-xl sm:text-2xl font-black tracking-tight leading-snug">
+              <span className="text-cyan-400">Observatorio de Conectividad Aerocomercial</span>
             </h3>
-            <p className="text-[11px] text-slate-400 font-medium mt-0.5">
-              Sistema de Inteligencia Cartográfica y Rutas Aéreas (SIG-AFAC)
-            </p>
           </div>
 
-          <div className="mt-3 inline-block px-2.5 py-1 bg-amber-500/10 border border-amber-500/30 rounded-lg text-[11px] text-amber-300 font-semibold">
-            🔒 INFORMACIÓN CONFIDENCIAL Y RESERVADA • ACCESO RESTRINGIDO
+          <div className="mt-3.5 inline-block px-3 py-1 bg-amber-500/10 border border-amber-500/30 rounded-lg text-[11px] text-amber-300 font-semibold">
+            🔒 INFORMACIÓN CONFIDENCIAL • ACCESO RESTRINGIDO
           </div>
         </div>
 
@@ -214,8 +211,9 @@ export const AfacAuthGate: React.FC<AfacAuthGateProps> = ({ onLoginSuccess }) =>
           </button>
 
           {showDisclaimer && (
-            <div className="mt-2.5 p-3 rounded-xl bg-slate-950/80 border border-slate-800 text-[10px] text-slate-400 text-left leading-relaxed animate-in fade-in duration-200">
-              <strong>AVISO DE SEGURIDAD Y CONFIDENCIALIDAD:</strong> Toda la información contenida en esta plataforma (rutas, flujos de pasajeros, frecuencias de vuelo y capacidades operativas del espacio aéreo mexicano) es para uso exclusivo del personal autorizado de la Agencia Federal de Aviación Civil (AFAC). Toda sesión, consulta y exportación queda registrada con fines de auditoría. El uso indebido será sancionado conforme a la legislación aplicable en materia de aviación civil y seguridad nacional.
+            <div className="mt-2.5 p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 text-[11px] text-slate-300 text-left leading-relaxed animate-in fade-in duration-200">
+              <strong className="text-cyan-400 font-bold block mb-1">AVISO DE SEGURIDAD Y CONFIDENCIALIDAD:</strong>
+              Toda la información contenida en esta plataforma es para uso exclusivo del personal autorizado de la Agencia Federal de Aviación Civil (AFAC). Dicha información se deberá tratar como confidencial (secreto comercial), de conformidad con lo establecido en la Ley General de Transparencia y Acceso a la Información Pública. Toda sesión, consulta y exportación queda registrada con fines de auditoría. El uso indebido será sancionado conforme a la legislación aplicable en materia de aviación civil.
             </div>
           )}
         </div>

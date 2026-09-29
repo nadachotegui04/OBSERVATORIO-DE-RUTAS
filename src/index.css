@@ -28,48 +28,38 @@
   line-height: 1.5 !important;
 }
 
-.leaflet-tooltip {
-  background: rgba(11, 15, 25, 0.95) !important;
-  backdrop-filter: blur(8px) !important;
-  border: 1px solid rgba(56, 189, 248, 0.35) !important;
-  color: #f8fafc !important;
-  border-radius: 8px !important;
-  padding: 5px 9px !important;
-  font-size: 11px !important;
-  font-weight: 600 !important;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6) !important;
-}
-
-.custom-airport-tooltip {
-  background: rgba(11, 15, 25, 0.96) !important;
-  backdrop-filter: blur(10px) !important;
-  border: 1px solid rgba(56, 189, 248, 0.4) !important;
-  border-radius: 8px !important;
-  padding: 4px 8px !important;
-}
-
-.permanent-iata-tooltip {
-  pointer-events: none !important;
-  background: rgba(11, 15, 25, 0.94) !important;
-  backdrop-filter: blur(8px) !important;
-  border: 1px solid rgba(56, 189, 248, 0.6) !important;
-  border-radius: 6px !important;
-  padding: 2px 5px !important;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6) !important;
-}
-
+.leaflet-tooltip,
+.leaflet-tooltip-top,
+.leaflet-tooltip-bottom,
+.leaflet-tooltip-left,
+.leaflet-tooltip-right,
+.custom-airport-tooltip,
+.permanent-iata-tooltip,
 .permanent-top-tooltip {
   pointer-events: none !important;
-  background: rgba(11, 15, 25, 0.96) !important;
-  backdrop-filter: blur(10px) !important;
-  border: 1px solid rgba(245, 158, 11, 0.7) !important;
-  border-radius: 8px !important;
-  padding: 3px 8px !important;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.7) !important;
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
 }
 
-.leaflet-tooltip-top:before {
-  border-top-color: rgba(11, 15, 25, 0.96) !important;
+.leaflet-tooltip:before,
+.leaflet-tooltip:after,
+.leaflet-tooltip-top:before,
+.leaflet-tooltip-bottom:before,
+.leaflet-tooltip-left:before,
+.leaflet-tooltip-right:before,
+.custom-airport-tooltip:before,
+.custom-airport-tooltip:after,
+.permanent-iata-tooltip:before,
+.permanent-iata-tooltip:after,
+.permanent-top-tooltip:before,
+.permanent-top-tooltip:after {
+  display: none !important;
+  border: none !important;
 }
 
 /* Custom Airport Markers */

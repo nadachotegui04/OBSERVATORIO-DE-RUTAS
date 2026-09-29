@@ -27,14 +27,17 @@ interface CompareViewProps {
   activeMapMode?: MapVisualizationMode;
   onMapModeChange?: (mode: MapVisualizationMode) => void;
   onUpdateAirlineColor?: (airline: string, color: string) => void;
+  topAirportsRankMap?: Map<string, number>;
 }
 
 export const CompareView: React.FC<CompareViewProps> = ({
   allRoutes,
   customAirlineColors,
   activeMapMode = 'routes_by_airline',
+  currentMainFilters,
   onMapModeChange,
   onUpdateAirlineColor,
+  topAirportsRankMap,
 }) => {
   // Sync state between both maps
   const [syncMaps, setSyncMaps] = useState<boolean>(true);
@@ -130,6 +133,13 @@ export const CompareView: React.FC<CompareViewProps> = ({
   const handleExportComparisonPng = async () => {
     try {
       setIsExportingPng(true);
+      const modeLabel =
+        compareMapMode === 'airports'
+          ? 'Modo 1: Aeropuertos y Hubs'
+          : compareMapMode === 'routes_by_airline'
+          ? 'Modo 2: Rutas Autorizadas por Aerolínea'
+          : 'Modo 3: Rutas Únicas y Operador Exclusivo';
+
       await exportComparisonToImage(
         'compare-view-container',
         `comparativa_dual_${selectedAirlineA}_vs_${selectedAirlineB}_${Date.now()}.png`,
@@ -139,7 +149,8 @@ export const CompareView: React.FC<CompareViewProps> = ({
         airportsB,
         selectedAirlineA === 'all' ? 'Todas las aerolíneas (A)' : selectedAirlineA,
         selectedAirlineB === 'all' ? 'Todas las aerolíneas (B)' : selectedAirlineB,
-        customAirlineColors
+        customAirlineColors,
+        { modeName: modeLabel }
       );
       setPngSuccess(true);
       setTimeout(() => setPngSuccess(false), 2500);
@@ -410,6 +421,13 @@ export const CompareView: React.FC<CompareViewProps> = ({
               tileLayerKey={tileLayerA}
               customAirlineColors={customAirlineColors}
               selectedAirlines={selectedAirlineA === 'all' ? [] : [selectedAirlineA]}
+              airportColorOverride={
+                selectedAirlineA === 'all'
+                  ? '#06b6d4'
+                  : getAirlineColor(selectedAirlineA, customAirlineColors)
+              }
+              topAirportsRankMap={topAirportsRankMap}
+              selectedTopN={currentMainFilters?.selectedTopN || null}
               syncCenter={syncMaps ? sharedCenter : null}
               syncZoom={syncMaps ? sharedZoom : null}
               onMapMove={handleMapMove}
@@ -515,6 +533,13 @@ export const CompareView: React.FC<CompareViewProps> = ({
               tileLayerKey={tileLayerB}
               customAirlineColors={customAirlineColors}
               selectedAirlines={selectedAirlineB === 'all' ? [] : [selectedAirlineB]}
+              airportColorOverride={
+                selectedAirlineB === 'all'
+                  ? '#a855f7'
+                  : getAirlineColor(selectedAirlineB, customAirlineColors)
+              }
+              topAirportsRankMap={topAirportsRankMap}
+              selectedTopN={currentMainFilters?.selectedTopN || null}
               syncCenter={syncMaps ? sharedCenter : null}
               syncZoom={syncMaps ? sharedZoom : null}
               onMapMove={handleMapMove}

@@ -259,7 +259,13 @@ export default function App() {
 
   // 3 Map Visualization Modes: 'airports' | 'routes_by_airline' | 'unique_routes'
   const [mapMode, setMapMode] = useState<MapVisualizationMode>('routes_by_airline');
+  const [selectedAirportCode, setSelectedAirportCode] = useState<string | null>(null);
   const [selectedAirportForConnections, setSelectedAirportForConnections] = useState<string | null>(null);
+
+  // Mode 1 (Aeropuertos y Hub) Analysis Mode: 'standard' vs 'specific'
+  const [mode1AnalysisMode, setMode1AnalysisMode] = useState<'standard' | 'specific'>('standard');
+  const [mode1SelectedAirline, setMode1SelectedAirline] = useState<string>('Aeroméxico');
+  const [iataLabelSize, setIataLabelSize] = useState<'sm' | 'md' | 'lg'>('md');
 
   // Mode 3 (and Mode 2) Analysis Mode: 'general' vs 'specific'
   const [uniqueAnalysisMode, setUniqueAnalysisMode] = useState<UniqueRoutesAnalysisMode>(() => {
@@ -690,9 +696,9 @@ export default function App() {
     return extractUniqueAirports(allRoutes);
   }, [allRoutes]);
 
-  // Top 15 Airports strictly with highest number of authorized routes
+  // Top Airports strictly with highest number of authorized routes (up to 25)
   const top15Airports = useMemo(() => {
-    return getTopAirports(allRoutes, allAirports, 15);
+    return getTopAirports(allRoutes, allAirports, 25);
   }, [allRoutes, allAirports]);
 
   const top4Hubs = useMemo(() => {
@@ -827,13 +833,13 @@ export default function App() {
     });
   }, [allRoutes, filters, selectedHubCode, corridorAllAirlinesMap, top15Airports]);
 
-  // Unique Airports for filtered routes (if Top N is active in airports mode, display strictly the Top N airports)
+  // Unique Airports for filtered routes (if Top N is active, display strictly the Top N airports)
   const filteredAirports = useMemo(() => {
-    if (filters.selectedTopN && mapMode === 'airports') {
+    if (filters.selectedTopN) {
       return top15Airports.slice(0, filters.selectedTopN);
     }
     return extractUniqueAirports(filteredRoutes);
-  }, [filteredRoutes, filters.selectedTopN, mapMode, top15Airports]);
+  }, [filteredRoutes, filters.selectedTopN, top15Airports]);
 
   // Dataset Analytics
   const stats = useMemo(() => {
@@ -1245,6 +1251,12 @@ export default function App() {
           onChangeUniqueSingleColor={setUniqueSingleColor}
           uniqueMultiColor={uniqueMultiColor}
           onChangeUniqueMultiColor={setUniqueMultiColor}
+          mode1AnalysisMode={mode1AnalysisMode}
+          onMode1AnalysisModeChange={setMode1AnalysisMode}
+          mode1SelectedAirline={mode1SelectedAirline}
+          onMode1SelectedAirlineChange={setMode1SelectedAirline}
+          iataLabelSize={iataLabelSize}
+          onIataLabelSizeChange={setIataLabelSize}
         />
 
         {/* Center Canvas / Map View */}
@@ -1272,12 +1284,8 @@ export default function App() {
                 airports={filteredAirports}
                 mapMode={mapMode}
                 onMapModeChange={setMapMode}
-                selectedAirportCode={selectedAirportForConnections}
-                onSelectAirport={(code) => {
-                  if (mapMode === 'airports') {
-                    setSelectedAirportForConnections(code);
-                  }
-                }}
+                selectedAirportCode={selectedAirportCode}
+                onSelectAirport={(code) => setSelectedAirportCode(code)}
                 onOpenAirportConnections={(code) => {
                   setSelectedAirportForConnections(code);
                 }}
@@ -1286,6 +1294,7 @@ export default function App() {
                 colorScheme={colorScheme}
                 customAirlineColors={customAirlineColors}
                 showAirportLabels={showAirportLabels}
+                onToggleAirportLabels={setShowAirportLabels}
                 showFlightArcs={showFlightArcs}
                 showAirports={showAirports}
                 topAirportsRankMap={topAirportsRankMap}
@@ -1299,6 +1308,12 @@ export default function App() {
                 onChangeUniqueSingleColor={setUniqueSingleColor}
                 uniqueMultiColor={uniqueMultiColor}
                 onChangeUniqueMultiColor={setUniqueMultiColor}
+                mode1AnalysisMode={mode1AnalysisMode}
+                onMode1AnalysisModeChange={setMode1AnalysisMode}
+                mode1SelectedAirline={mode1SelectedAirline}
+                onMode1SelectedAirlineChange={setMode1SelectedAirline}
+                iataLabelSize={iataLabelSize}
+                onIataLabelSizeChange={setIataLabelSize}
                 availableAirlines={availableAirlines}
                 selectedAirlines={filters.selectedAirlines}
                 onToggleAirline={handleToggleAirline}
@@ -1320,6 +1335,7 @@ export default function App() {
               activeMapMode={mapMode}
               onMapModeChange={setMapMode}
               onUpdateAirlineColor={handleUpdateAirlineColor}
+              topAirportsRankMap={topAirportsRankMap}
             />
           )}
 

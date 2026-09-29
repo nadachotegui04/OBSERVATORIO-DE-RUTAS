@@ -45,6 +45,7 @@ import {
   Award,
   CheckCircle2,
   Calendar,
+  Tag,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -103,6 +104,12 @@ interface SidebarProps {
   onChangeUniqueSingleColor?: (color: string) => void;
   uniqueMultiColor?: string;
   onChangeUniqueMultiColor?: (color: string) => void;
+  mode1AnalysisMode?: 'standard' | 'specific';
+  onMode1AnalysisModeChange?: (mode: 'standard' | 'specific') => void;
+  mode1SelectedAirline?: string;
+  onMode1SelectedAirlineChange?: (airline: string) => void;
+  iataLabelSize?: 'sm' | 'md' | 'lg';
+  onIataLabelSizeChange?: (size: 'sm' | 'md' | 'lg') => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -161,6 +168,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onChangeUniqueSingleColor,
   uniqueMultiColor = '#f59e0b',
   onChangeUniqueMultiColor,
+  mode1AnalysisMode = 'standard',
+  onMode1AnalysisModeChange,
+  mode1SelectedAirline = 'Aeroméxico',
+  onMode1SelectedAirlineChange,
+  iataLabelSize = 'md',
+  onIataLabelSizeChange,
 }) => {
   const [activeTab, setActiveTab] = useState<'filters' | 'visuals' | 'upload'>('filters');
 
@@ -650,6 +663,128 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     </div>
                   </button>
                 </div>
+
+                {/* Modalidad de Análisis en Modo 1 (Aeropuertos y Hubs) */}
+                {mapMode === 'airports' && (
+                  <div className="mt-3 p-3 rounded-xl bg-slate-950/95 border-2 border-cyan-500/70 text-xs space-y-3 shadow-lg shadow-cyan-950/40">
+                    <div className="flex items-center justify-between">
+                      <span className="font-black text-cyan-300 flex items-center gap-1.5 uppercase text-[11px] tracking-wider">
+                        <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                        Modalidad de Análisis (Aeropuertos y Hubs)
+                      </span>
+                      <span className="text-[10px] bg-cyan-900/80 text-cyan-200 px-2 py-0.5 rounded-full border border-cyan-700 font-bold">
+                        {mode1AnalysisMode === 'standard' ? 'Estándar' : 'Específico'}
+                      </span>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                        Selecciona el tipo de análisis:
+                      </label>
+                      <div className="grid grid-cols-2 gap-1.5 bg-slate-900/90 p-1 rounded-xl border border-slate-800">
+                        <button
+                          type="button"
+                          onClick={() => onMode1AnalysisModeChange && onMode1AnalysisModeChange('standard')}
+                          className={`py-2 px-2 rounded-lg text-xs font-bold transition flex items-center justify-center cursor-pointer ${
+                            mode1AnalysisMode === 'standard'
+                              ? 'bg-cyan-500 text-slate-950 shadow-md ring-1 ring-cyan-400'
+                              : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                          }`}
+                        >
+                          Estándar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onMode1AnalysisModeChange && onMode1AnalysisModeChange('specific')}
+                          className={`py-2 px-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer ${
+                            mode1AnalysisMode === 'specific'
+                              ? 'bg-cyan-500 text-slate-950 shadow-md ring-1 ring-cyan-400'
+                              : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                          }`}
+                        >
+                          <Sparkles className="w-3 h-3 text-amber-300" />
+                          <span>Análisis específico</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {mode1AnalysisMode === 'standard' ? (
+                      <p className="text-[11px] text-slate-300 leading-relaxed border-t border-slate-800/80 pt-2">
+                        Vista estándar: Muestra todos los aeropuertos y hubs con círculos indicadores en color cian uniforme. Al dar clic en un aeropuerto se muestra su resumen con rutas asignadas y aerolíneas autorizadas.
+                      </p>
+                    ) : (
+                      <div className="space-y-2.5 border-t border-slate-800/80 pt-2.5">
+                        <p className="text-[11px] text-slate-300 leading-relaxed">
+                          Análisis específico: Elige la aerolínea y personaliza su color para asignarlo a los círculos indicadores de los aeropuertos en el mapa.
+                        </p>
+
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                            Seleccionar aerolínea:
+                          </label>
+                          <select
+                            value={mode1SelectedAirline}
+                            onChange={(e) => onMode1SelectedAirlineChange && onMode1SelectedAirlineChange(e.target.value)}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white font-medium focus:ring-1 focus:ring-cyan-500 focus:outline-none cursor-pointer"
+                          >
+                            {availableAirlines.map((airline) => (
+                              <option key={airline} value={airline} className="bg-slate-900 text-white">
+                                {airline}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="p-2.5 rounded-lg bg-slate-900/90 border border-slate-800 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-bold text-slate-300 uppercase tracking-wider">
+                              Color del círculo indicador:
+                            </span>
+                            <div className="flex items-center gap-1.5">
+                              <span
+                                className="w-3.5 h-3.5 rounded-full border border-white/60 shadow-sm"
+                                style={{ backgroundColor: getAirlineColor(mode1SelectedAirline, customAirlineColors) }}
+                              />
+                              <span className="font-mono text-[10px] text-cyan-300 font-bold">
+                                {getAirlineColor(mode1SelectedAirline, customAirlineColors)}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="color"
+                              value={getAirlineColor(mode1SelectedAirline, customAirlineColors)}
+                              onChange={(e) => onUpdateAirlineColor && onUpdateAirlineColor(mode1SelectedAirline, e.target.value)}
+                              className="w-8 h-8 rounded-lg cursor-pointer bg-transparent border-0 p-0 shrink-0"
+                              title="Elegir color personalizado"
+                            />
+                            <div className="flex flex-wrap gap-1 flex-1">
+                              {['#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899', '#ef4444', '#f59e0b', '#10b981', '#6366f1'].map((paletteColor) => (
+                                <button
+                                  key={paletteColor}
+                                  type="button"
+                                  onClick={() => onUpdateAirlineColor && onUpdateAirlineColor(mode1SelectedAirline, paletteColor)}
+                                  className={`w-5 h-5 rounded-full border transition cursor-pointer hover:scale-110 ${
+                                    getAirlineColor(mode1SelectedAirline, customAirlineColors).toLowerCase() === paletteColor.toLowerCase()
+                                      ? 'border-white ring-2 ring-cyan-400 scale-110'
+                                      : 'border-white/30'
+                                  }`}
+                                  style={{ backgroundColor: paletteColor }}
+                                  title={`Asignar color ${paletteColor}`}
+                                />
+                              ))}
+                            </div>
+                          </div>
+
+                          <p className="text-[10px] text-cyan-200/90 pt-0.5">
+                            Los círculos de aeropuertos con vuelos de <strong className="text-white">{mode1SelectedAirline}</strong> se iluminan con este color en el mapa.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {mapMode === 'unique_routes' && (
                   <div className="mt-3 p-3 rounded-xl bg-slate-950/95 border-2 border-cyan-500/70 text-xs space-y-2.5 shadow-lg shadow-cyan-950/40">
@@ -1364,7 +1499,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <div>
                     <div className="text-xs font-bold text-slate-200">¿Deseas actualizar el archivo Excel?</div>
                     <p className="text-[11px] text-slate-400 mt-1 max-w-xs mx-auto">
-                      La subida y sustitución de archivos cartográficos está reservada para el administrador del sistema.
+                      La subida y sustitución de archivos cartográficos está restringida para el administrador del sistema.
                     </p>
                   </div>
                   <button

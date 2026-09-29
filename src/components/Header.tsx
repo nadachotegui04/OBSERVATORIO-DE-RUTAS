@@ -57,7 +57,7 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="h-8 w-px bg-slate-800 shrink-0"></div>
           <div className="min-w-0 shrink-0">
             <h2 className="text-xs md:text-sm font-black text-white tracking-tight flex items-center gap-1.5">
-              <span className="text-cyan-400">Observatorio de Conectividad Aerocomercial.</span>
+              <span className="text-cyan-400">Observatorio de Conectividad Aerocomercial</span>
             </h2>
             <p className="text-[10px] text-slate-400 font-medium">Plataforma de Inteligencia Aeronáutica</p>
           </div>
