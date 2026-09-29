@@ -259,13 +259,7 @@ export default function App() {
 
   // 3 Map Visualization Modes: 'airports' | 'routes_by_airline' | 'unique_routes'
   const [mapMode, setMapMode] = useState<MapVisualizationMode>('routes_by_airline');
-  const [selectedAirportCode, setSelectedAirportCode] = useState<string | null>(null);
   const [selectedAirportForConnections, setSelectedAirportForConnections] = useState<string | null>(null);
-
-  // Mode 1 (Aeropuertos y Hub) Analysis Mode: 'standard' vs 'specific'
-  const [mode1AnalysisMode, setMode1AnalysisMode] = useState<'standard' | 'specific'>('standard');
-  const [mode1SelectedAirline, setMode1SelectedAirline] = useState<string>('Aeroméxico');
-  const [iataLabelSize, setIataLabelSize] = useState<'sm' | 'md' | 'lg'>('md');
 
   // Mode 3 (and Mode 2) Analysis Mode: 'general' vs 'specific'
   const [uniqueAnalysisMode, setUniqueAnalysisMode] = useState<UniqueRoutesAnalysisMode>(() => {
@@ -1251,12 +1245,6 @@ export default function App() {
           onChangeUniqueSingleColor={setUniqueSingleColor}
           uniqueMultiColor={uniqueMultiColor}
           onChangeUniqueMultiColor={setUniqueMultiColor}
-          mode1AnalysisMode={mode1AnalysisMode}
-          onMode1AnalysisModeChange={setMode1AnalysisMode}
-          mode1SelectedAirline={mode1SelectedAirline}
-          onMode1SelectedAirlineChange={setMode1SelectedAirline}
-          iataLabelSize={iataLabelSize}
-          onIataLabelSizeChange={setIataLabelSize}
         />
 
         {/* Center Canvas / Map View */}
@@ -1284,8 +1272,12 @@ export default function App() {
                 airports={filteredAirports}
                 mapMode={mapMode}
                 onMapModeChange={setMapMode}
-                selectedAirportCode={selectedAirportCode}
-                onSelectAirport={(code) => setSelectedAirportCode(code)}
+                selectedAirportCode={selectedAirportForConnections}
+                onSelectAirport={(code) => {
+                  if (mapMode === 'airports') {
+                    setSelectedAirportForConnections(code);
+                  }
+                }}
                 onOpenAirportConnections={(code) => {
                   setSelectedAirportForConnections(code);
                 }}
@@ -1308,12 +1300,6 @@ export default function App() {
                 onChangeUniqueSingleColor={setUniqueSingleColor}
                 uniqueMultiColor={uniqueMultiColor}
                 onChangeUniqueMultiColor={setUniqueMultiColor}
-                mode1AnalysisMode={mode1AnalysisMode}
-                onMode1AnalysisModeChange={setMode1AnalysisMode}
-                mode1SelectedAirline={mode1SelectedAirline}
-                onMode1SelectedAirlineChange={setMode1SelectedAirline}
-                iataLabelSize={iataLabelSize}
-                onIataLabelSizeChange={setIataLabelSize}
                 availableAirlines={availableAirlines}
                 selectedAirlines={filters.selectedAirlines}
                 onToggleAirline={handleToggleAirline}
