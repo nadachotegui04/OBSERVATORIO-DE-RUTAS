@@ -668,92 +668,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   </button>
                 </div>
 
-                {/* MODE 1 ANALYSIS MODE: Estándar vs Análisis Específico con aerolínea y selector de color */}
+                {/* MODE 1 DESCRIPTION: Color para 2+ aerolíneas y color distinto por aerolínea */}
                 {mapMode === 'airports' && (
-                  <div className="mt-3 p-3 rounded-xl bg-slate-950/95 border-2 border-cyan-500/70 text-xs space-y-2.5 shadow-lg shadow-cyan-950/40">
+                  <div className="mt-3 p-3 rounded-xl bg-slate-950/95 border border-cyan-500/50 text-xs space-y-2 shadow-lg shadow-cyan-950/30">
                     <div className="flex items-center justify-between">
                       <span className="font-black text-cyan-300 flex items-center gap-1.5 uppercase text-[11px] tracking-wider">
-                        <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
-                        Modalidad de Análisis (Aeropuertos)
-                      </span>
-                      <span className="text-[10px] bg-cyan-900/80 text-cyan-200 px-2 py-0.5 rounded-full border border-cyan-700 font-bold">
-                        {mode1AnalysisMode === 'standard' ? 'Estándar' : 'Específico'}
+                        <Palette className="w-3.5 h-3.5 text-cyan-400" />
+                        Código Cromático de Aeropuertos
                       </span>
                     </div>
-
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                        Selecciona el tipo de análisis:
-                      </label>
-                      <div className="grid grid-cols-2 gap-1.5 bg-slate-900/90 p-1 rounded-xl border border-slate-800">
-                        <button
-                          type="button"
-                          onClick={() => onMode1AnalysisModeChange && onMode1AnalysisModeChange('standard')}
-                          className={`py-2 px-2 rounded-lg text-xs font-bold transition flex items-center justify-center cursor-pointer ${
-                            mode1AnalysisMode === 'standard'
-                              ? 'bg-cyan-500 text-slate-950 shadow-md ring-1 ring-cyan-400'
-                              : 'text-slate-300 hover:text-white hover:bg-slate-800'
-                          }`}
-                        >
-                          Estándar
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => onMode1AnalysisModeChange && onMode1AnalysisModeChange('specific')}
-                          className={`py-2 px-2 rounded-lg text-xs font-bold transition flex items-center justify-center cursor-pointer ${
-                            mode1AnalysisMode === 'specific'
-                              ? 'bg-cyan-500 text-slate-950 shadow-md ring-1 ring-cyan-400'
-                              : 'text-slate-300 hover:text-white hover:bg-slate-800'
-                          }`}
-                        >
-                          Análisis específico
-                        </button>
-                      </div>
-                    </div>
-
-                    {mode1AnalysisMode === 'standard' ? (
-                      <p className="text-[11px] text-slate-300 leading-relaxed border-t border-slate-800/80 pt-2">
-                        Todos los aeropuertos y hubs se visualizan en color cian institucional. Al dar clic sobre cualquier aeropuerto se abre su resumen y opciones de conexiones directas.
-                      </p>
-                    ) : (
-                      <div className="space-y-2 border-t border-slate-800/80 pt-2">
-                        <p className="text-[11px] text-slate-300 leading-relaxed">
-                          Selecciona una aerolínea autorizada y su color representativo para resaltar en el mapa los círculos de todos los aeropuertos donde opera:
-                        </p>
-                        <div className="flex items-center gap-2">
-                          <select
-                            id="select-mode1-airline"
-                            value={mode1SpecificAirline || (availableAirlines[0] || '')}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              if (onMode1SpecificAirlineChange) onMode1SpecificAirlineChange(val);
-                            }}
-                            className="flex-1 bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-xl px-2.5 py-1.5 focus:border-cyan-500 focus:outline-none cursor-pointer"
-                          >
-                            {availableAirlines.map((airline) => (
-                              <option key={airline} value={airline}>
-                                {airline}
-                              </option>
-                            ))}
-                          </select>
-                          <div className="relative flex items-center justify-center shrink-0">
-                            <input
-                              type="color"
-                              value={mode1SpecificAirlineColor || '#06b6d4'}
-                              onChange={(e) => onMode1SpecificAirlineColorChange && onMode1SpecificAirlineColorChange(e.target.value)}
-                              className="w-8 h-8 rounded-xl border border-white/40 cursor-pointer p-0 bg-transparent opacity-0 absolute inset-0 z-10"
-                              title="Elegir color para la aerolínea en el mapa"
-                            />
-                            <div
-                              className="w-8 h-8 rounded-xl border-2 border-white/70 shadow-md flex items-center justify-center text-slate-950 font-bold"
-                              style={{ backgroundColor: mode1SpecificAirlineColor || '#06b6d4' }}
-                            >
-                              <Palette className="w-4 h-4 text-white drop-shadow" />
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
+                    <p className="text-[11px] text-slate-300 leading-relaxed">
+                      Cada aeropuerto se identifica con un color específico cuando operan <strong>2 o más aerolíneas</strong>, y con el <strong>color propio de cada aerolínea</strong> cuando opera una sola aerolínea (personalizable en todo momento).
+                    </p>
                   </div>
                 )}
 
@@ -1071,90 +997,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 )}
               </div>
             </div>
-
-            {/* Modo 1: Apartado de Aerolíneas con color UNIFORME para todas (#06b6d4) */}
-            {mapMode === 'airports' && (
-              <div className="space-y-2 bg-slate-950/80 p-3 rounded-xl border border-slate-800">
-                <div className="flex items-center justify-between mb-1">
-                  <div>
-                    <label className="text-slate-200 font-bold text-xs flex items-center gap-1.5">
-                      <Plane className="w-3.5 h-3.5 text-cyan-400" />
-                      Aerolíneas en Red ({availableAirlines.length})
-                    </label>
-                    <span className="text-[10px] text-cyan-400 block font-semibold">
-                      Color uniforme (#06b6d4) para todas en Modo 1
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={selectAllAirlines}
-                      className="text-[10px] text-cyan-400 hover:text-white underline cursor-pointer"
-                      title="Marcar todas las aerolíneas"
-                    >
-                      Marcar todas
-                    </button>
-                    <span className="text-slate-600">|</span>
-                    <button
-                      type="button"
-                      onClick={deselectAllAirlines}
-                      className="text-[10px] text-slate-400 hover:text-rose-400 underline cursor-pointer"
-                      title="Deseleccionar todas las aerolíneas"
-                    >
-                      Limpiar
-                    </button>
-                  </div>
-                </div>
-
-                <div className="space-y-1.5 bg-slate-950/60 p-2 rounded-xl border border-slate-800/80 max-h-56 overflow-y-auto">
-                  {availableAirlines.map((airline) => {
-                    const isNoneSelected = filters.selectedAirlines.includes('__NONE__');
-                    const isChecked = !isNoneSelected && (filters.selectedAirlines.length === 0 || filters.selectedAirlines.includes(airline));
-                    const uniformColor = '#06b6d4';
-                    return (
-                      <div
-                        key={airline}
-                        onClick={() => toggleAirline(airline)}
-                        className={`flex items-center justify-between p-1.5 rounded-lg transition cursor-pointer select-none ${
-                          isChecked
-                            ? 'bg-slate-900/90 hover:bg-slate-850'
-                            : 'bg-slate-950/40 opacity-60 hover:opacity-90'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2 min-w-0 flex-1">
-                          {/* Uniform Color Indicator for Mode 1: EXACT SAME COLOR for ALL */}
-                          <span
-                            className="w-3.5 h-3.5 rounded-full border border-white/70 shadow-sm shrink-0"
-                            style={{ backgroundColor: uniformColor }}
-                          />
-                          <span
-                            className="text-slate-200 font-medium text-xs truncate"
-                            title={airline}
-                          >
-                            {airline}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center gap-2 shrink-0">
-                          <label className="flex items-center cursor-pointer" onClick={(e) => e.stopPropagation()}>
-                            <input
-                              type="checkbox"
-                              checked={isChecked}
-                              onChange={() => toggleAirline(airline)}
-                              className="w-4 h-4 rounded border-slate-700 bg-slate-900 text-cyan-500 focus:ring-cyan-500 cursor-pointer accent-cyan-500"
-                              title={isChecked ? `Desmarcar ${airline}` : `Marcar ${airline}`}
-                            />
-                          </label>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-                <p className="text-[10px] text-slate-400 mt-1 leading-snug">
-                  En el Modo 1 (Aeropuertos y Hub), todas las aerolíneas comparten el mismo color uniforme (#06b6d4) para priorizar la visualización de los aeropuertos y sus conexiones.
-                </p>
-              </div>
-            )}
 
             {/* Modos 2 y 3: Las aerolíneas están EXCLUSIVAMENTE en la pestaña de la derecha */}
             {(mapMode === 'routes_by_airline' || mapMode === 'unique_routes') && (
