@@ -124,6 +124,9 @@ export interface FilterState {
   onlyExclusiveRoutes?: boolean;
   selectedTopN?: number | null;
   uniqueRoutesAnalysisMode?: UniqueRoutesAnalysisMode;
+  mode1AnalysisMode?: 'standard' | 'specific';
+  mode1SpecificAirline?: string;
+  mode1SpecificAirlineColor?: string;
 }
 
 export interface SavedMap {

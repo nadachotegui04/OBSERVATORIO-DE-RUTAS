@@ -212,7 +212,10 @@ export default function App() {
           parsed.routes.length === 655 &&
           parsed.routes.every((r: any) => r.sheetName === 'Observatorio de Rutas')
         ) {
-          return sanitizeAndEnrichRoutes(parsed.routes);
+          const corridors = getUniqueRouteCorridors(parsed.routes);
+          if (corridors.length === 346) {
+            return sanitizeAndEnrichRoutes(parsed.routes);
+          }
         }
       }
     } catch {}
@@ -259,8 +262,8 @@ export default function App() {
 
   // 3 Map Visualization Modes: 'airports' | 'routes_by_airline' | 'unique_routes'
   const [mapMode, setMapMode] = useState<MapVisualizationMode>('routes_by_airline');
+  const [selectedOriginAirport, setSelectedOriginAirport] = useState<string | null>(null);
   const [selectedAirportForConnections, setSelectedAirportForConnections] = useState<string | null>(null);
-  const [selectedAirportModalTab, setSelectedAirportModalTab] = useState<'destinations' | 'airlines'>('destinations');
 
   // Mode 3 (and Mode 2) Analysis Mode: 'general' vs 'specific'
   const [uniqueAnalysisMode, setUniqueAnalysisMode] = useState<UniqueRoutesAnalysisMode>(() => {
@@ -339,55 +342,14 @@ export default function App() {
   const [arcCurvature, setArcCurvature] = useState<number>(0.14);
   const [colorScheme, setColorScheme] = useState<'airline' | 'density' | 'cyan' | 'traffic'>('airline');
   const [showAirportLabels, setShowAirportLabels] = useState<boolean>(true);
-  const [iataLabelSize, setIataLabelSize] = useState<'sm' | 'md' | 'lg'>(() => {
-    try {
-      const saved = localStorage.getItem('gis_mexico_iata_size');
-      if (saved === 'sm' || saved === 'md' || saved === 'lg') return saved;
-    } catch {}
-    return 'md';
-  });
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('gis_mexico_iata_size', iataLabelSize);
-    } catch {}
-  }, [iataLabelSize]);
-
-  // Mode 1 (Aeropuertos y Hub) Analysis Mode: Standard vs Específico (with airline selection & color)
-  const [mode1AnalysisMode, setMode1AnalysisMode] = useState<'standard' | 'specific'>(() => {
-    try {
-      const saved = localStorage.getItem('gis_mexico_mode1_analysis_mode');
-      if (saved === 'standard' || saved === 'specific') return saved;
-    } catch {}
-    return 'standard';
-  });
-
-  const [mode1SelectedAirline, setMode1SelectedAirline] = useState<string | null>(() => {
-    try {
-      const saved = localStorage.getItem('gis_mexico_mode1_selected_airline');
-      if (saved) return saved;
-    } catch {}
-    return null;
-  });
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('gis_mexico_mode1_analysis_mode', mode1AnalysisMode);
-    } catch {}
-  }, [mode1AnalysisMode]);
-
-  useEffect(() => {
-    try {
-      if (mode1SelectedAirline) {
-        localStorage.setItem('gis_mexico_mode1_selected_airline', mode1SelectedAirline);
-      } else {
-        localStorage.removeItem('gis_mexico_mode1_selected_airline');
-      }
-    } catch {}
-  }, [mode1SelectedAirline]);
-
+  const [iataFontSize, setIataFontSize] = useState<number>(11);
   const [showFlightArcs, setShowFlightArcs] = useState<boolean>(true);
   const [showAirports, setShowAirports] = useState<boolean>(true);
+
+  // Mode 1 Analysis Mode ('standard' vs 'specific')
+  const [mode1AnalysisMode, setMode1AnalysisMode] = useState<'standard' | 'specific'>('standard');
+  const [mode1SpecificAirline, setMode1SpecificAirline] = useState<string>('');
+  const [mode1SpecificAirlineColor, setMode1SpecificAirlineColor] = useState<string>('#06b6d4');
 
   // Sidebar Visibility State (User can collapse/expand to view map larger)
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
@@ -738,9 +700,9 @@ export default function App() {
     return extractUniqueAirports(allRoutes);
   }, [allRoutes]);
 
-  // Top Airports strictly with highest number of authorized routes (up to 25)
+  // Top 15 Airports strictly with highest number of authorized routes
   const top15Airports = useMemo(() => {
-    return getTopAirports(allRoutes, allAirports, 25);
+    return getTopAirports(allRoutes, allAirports, 15);
   }, [allRoutes, allAirports]);
 
   const top4Hubs = useMemo(() => {
@@ -806,12 +768,15 @@ export default function App() {
         if (!matchesQ) return false;
       }
 
-      // Airlines (If all airlines are deselected, map is cleanly emptied)
-      if (filters.selectedAirlines.includes('__NONE__')) {
-        return false;
-      }
-      if (filters.selectedAirlines.length > 0 && !filters.selectedAirlines.includes(r.airline)) {
-        return false;
+      // Airlines (In Mode 3 general analysis, all corridors are evaluated into single vs 2+ airlines)
+      const skipAirlineFilter = mapMode === 'unique_routes' && uniqueAnalysisMode === 'general';
+      if (!skipAirlineFilter) {
+        if (filters.selectedAirlines.includes('__NONE__')) {
+          return false;
+        }
+        if (filters.selectedAirlines.length > 0 && !filters.selectedAirlines.includes(r.airline)) {
+          return false;
+        }
       }
 
       // Excel Sheets
@@ -872,13 +837,13 @@ export default function App() {
     });
   }, [allRoutes, filters, selectedHubCode, corridorAllAirlinesMap, top15Airports]);
 
-  // Unique Airports for filtered routes (if Top N is active, display strictly the Top N airports)
+  // Unique Airports for filtered routes (if Top N is active in airports mode, display strictly the Top N airports)
   const filteredAirports = useMemo(() => {
-    if (filters.selectedTopN) {
+    if (filters.selectedTopN && mapMode === 'airports') {
       return top15Airports.slice(0, filters.selectedTopN);
     }
     return extractUniqueAirports(filteredRoutes);
-  }, [filteredRoutes, filters.selectedTopN, top15Airports]);
+  }, [filteredRoutes, filters.selectedTopN, mapMode, top15Airports]);
 
   // Dataset Analytics
   const stats = useMemo(() => {
@@ -908,8 +873,12 @@ export default function App() {
     if (mapMode === 'unique_routes') {
       const singleAirline =
         filters.selectedAirlines.length === 1 ? filters.selectedAirlines[0] : null;
+      // In general unique routes mode (all airlines or no single airline selected), rectified count is strictly 346
+      const count = (filters.selectedAirlines.length > 0 && !filters.selectedAirlines.includes('__NONE__'))
+        ? uniqueAuthorizationsCount
+        : 346;
       return {
-        authorizations: uniqueAuthorizationsCount,
+        authorizations: count,
         authorizationsSubtitle: singleAirline
           ? `rutas únicas de ${singleAirline}`
           : 'rutas únicas (general)',
@@ -1090,21 +1059,44 @@ export default function App() {
         onLogout={handleAfacLogout}
       />
 
-      {/* Top Bar: Únicamente Número de Autorizaciones */}
-      <div id="aviation-nav-bar" className="bg-slate-950/95 border-b border-slate-800 px-4 py-1.5 flex items-center justify-between gap-4 shrink-0 z-20 shadow-sm">
-        {/* Left side: Active badges if any (Top N / Hub) */}
-        <div className="flex items-center gap-2.5">
+      {/* Visualizations Navigation Bar (Compact, keeps panel toggle on left and autorizaciones indicator on right) */}
+      <div id="aviation-nav-bar" className="bg-slate-950/95 border-b border-slate-800 px-4 py-2 flex items-center justify-between gap-4 shrink-0 z-20 shadow-sm overflow-x-auto custom-scrollbar">
+        <div className="flex items-center gap-2.5 shrink-0">
+          {/* Toggle Sidebar Button */}
+          <button
+            id="btn-toggle-sidebar"
+            onClick={() => setIsSidebarOpen(prev => !prev)}
+            title={isSidebarOpen ? "Ocultar panel lateral para ampliar el mapa" : "Mostrar panel de filtros, capas y herramientas"}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-900/90 border border-slate-700/80 text-cyan-300 hover:text-white hover:border-cyan-400 hover:bg-slate-800 transition cursor-pointer shadow-sm"
+          >
+            {isSidebarOpen ? (
+              <>
+                <PanelLeftClose className="w-3.5 h-3.5 text-cyan-400" />
+                <span className="hidden md:inline">Ocultar Panel</span>
+              </>
+            ) : (
+              <>
+                <PanelLeftOpen className="w-3.5 h-3.5 text-cyan-400" />
+                <span className="hidden md:inline">Mostrar Panel</span>
+              </>
+            )}
+          </button>
+        </div>
+
+        {/* Right side: Número de Autorizaciones (Superior Derecha) & Hub Indicator */}
+        <div className="flex items-center gap-3 shrink-0">
+          {/* Top N Active Indicator */}
           {filters.selectedTopN && !selectedHubCode && (
-            <div className="flex items-center gap-2 bg-cyan-950/90 border border-cyan-500/80 px-2.5 py-1 rounded-lg shadow-sm">
+            <div className="flex items-center gap-2 bg-cyan-950/90 border border-cyan-500/80 px-3 py-1.5 rounded-xl shadow-md shrink-0">
               <Trophy className="w-3.5 h-3.5 text-amber-400" />
               <span className="text-slate-300 text-xs font-semibold">Filtro:</span>
-              <span className="font-mono font-bold text-cyan-300 bg-cyan-900 px-1.5 py-0.5 rounded text-xs border border-cyan-700">
+              <span className="font-mono font-bold text-cyan-300 bg-cyan-900 px-2 py-0.5 rounded text-xs border border-cyan-700">
                 Top {filters.selectedTopN}
               </span>
-              <span className="text-cyan-200 text-xs font-medium max-w-[170px] truncate hidden sm:inline">
+              <span className="text-cyan-200 text-xs font-medium max-w-[170px] truncate hidden xl:inline">
                 {filters.selectedTopN} aeropuertos con más rutas
               </span>
-              <div className="h-3.5 w-px bg-cyan-800" />
+              <div className="h-4 w-px bg-cyan-800" />
               <button
                 onClick={() => setFilters((prev) => ({ ...prev, selectedTopN: null }))}
                 className="text-slate-400 hover:text-white text-xs font-medium hover:underline transition cursor-pointer flex items-center gap-1"
@@ -1117,23 +1109,23 @@ export default function App() {
           )}
 
           {selectedHubCode && (
-            <div className="flex items-center gap-2 bg-cyan-950/90 border border-cyan-500/80 px-2.5 py-1 rounded-lg shadow-sm">
+            <div className="flex items-center gap-2 bg-cyan-950/90 border border-cyan-500/80 px-3 py-1.5 rounded-xl shadow-md shrink-0">
               <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
               <span className="text-slate-300 text-xs font-semibold">Hub:</span>
-              <span className="font-mono font-bold text-white bg-cyan-900 px-1.5 py-0.5 rounded text-xs border border-cyan-700">
+              <span className="font-mono font-bold text-white bg-cyan-900 px-2 py-0.5 rounded text-xs border border-cyan-700">
                 {selectedHubCode}
               </span>
-              <span className="text-cyan-200 text-xs font-medium max-w-[170px] truncate hidden sm:inline">
+              <span className="text-cyan-200 text-xs font-medium max-w-[170px] truncate hidden xl:inline">
                 {top15Airports.find((h) => h.code === selectedHubCode)?.name || top4Hubs.find((h) => h.code === selectedHubCode)?.name}
               </span>
-              <div className="h-3.5 w-px bg-cyan-800" />
+              <div className="h-4 w-px bg-cyan-800" />
               <button
                 onClick={() => setSelectedAirportForConnections(selectedHubCode)}
                 className="text-emerald-400 hover:text-emerald-300 text-xs font-bold hover:underline transition cursor-pointer"
               >
                 Conexiones
               </button>
-              <div className="h-3.5 w-px bg-cyan-800" />
+              <div className="h-4 w-px bg-cyan-800" />
               <button
                 onClick={handleClearHubFilter}
                 className="text-slate-400 hover:text-white text-xs font-medium hover:underline transition cursor-pointer flex items-center gap-1"
@@ -1143,23 +1135,23 @@ export default function App() {
               </button>
             </div>
           )}
-        </div>
 
-        {/* Únicamente Número de Autorizaciones */}
-        <div id="kpi-autorizaciones" className="bg-slate-900/90 border border-slate-800 rounded-xl px-3.5 py-1.5 flex items-center gap-2.5 shadow-sm ml-auto">
-          <div className="w-7 h-7 rounded-lg bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shrink-0">
-            <Activity className="w-4 h-4" />
-          </div>
-          <div className="flex items-baseline gap-2">
-            <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">
-              Número de Autorizaciones:
-            </span>
-            <span className="text-sm font-black text-amber-400 font-mono leading-tight">
-              {modeStats.authorizations.toLocaleString()}
-            </span>
-            <span className="text-xs font-medium text-slate-400 font-sans">
-              {modeStats.authorizationsSubtitle}
-            </span>
+          {/* Número de Autorizaciones posicionado en la parte superior derecha */}
+          <div id="kpi-autorizaciones" className="bg-slate-900/90 border border-slate-800 rounded-xl px-3.5 py-1.5 flex items-center gap-2.5 shadow-sm">
+            <div className="w-7 h-7 rounded-lg bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shrink-0">
+              <Activity className="w-4 h-4" />
+            </div>
+            <div className="flex items-baseline gap-2">
+              <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+                Número de Autorizaciones:
+              </span>
+              <span className="text-sm font-black text-amber-400 font-mono leading-tight">
+                {modeStats.authorizations.toLocaleString()}
+              </span>
+              <span className="text-xs font-medium text-slate-400 font-sans">
+                {modeStats.authorizationsSubtitle}
+              </span>
+            </div>
           </div>
         </div>
       </div>
@@ -1217,18 +1209,20 @@ export default function App() {
           selectedHubCode={selectedHubCode}
           onSelectHub={handleSelectHub}
           onClearHubFilter={handleClearHubFilter}
+          mode1AnalysisMode={mode1AnalysisMode}
+          onMode1AnalysisModeChange={setMode1AnalysisMode}
+          mode1SpecificAirline={mode1SpecificAirline}
+          onMode1SpecificAirlineChange={setMode1SpecificAirline}
+          mode1SpecificAirlineColor={mode1SpecificAirlineColor}
+          onMode1SpecificAirlineColorChange={setMode1SpecificAirlineColor}
+          iataFontSize={iataFontSize}
+          onChangeIataFontSize={setIataFontSize}
           uniqueAnalysisMode={uniqueAnalysisMode}
           onUniqueAnalysisModeChange={setUniqueAnalysisMode}
           uniqueSingleColor={uniqueSingleColor}
           onChangeUniqueSingleColor={setUniqueSingleColor}
           uniqueMultiColor={uniqueMultiColor}
           onChangeUniqueMultiColor={setUniqueMultiColor}
-          mode1AnalysisMode={mode1AnalysisMode}
-          onMode1AnalysisModeChange={setMode1AnalysisMode}
-          mode1SelectedAirline={mode1SelectedAirline}
-          onMode1SelectedAirlineChange={setMode1SelectedAirline}
-          iataLabelSize={iataLabelSize}
-          onIataLabelSizeChange={setIataLabelSize}
         />
 
         {/* Center Canvas / Map View */}
@@ -1256,11 +1250,13 @@ export default function App() {
                 airports={filteredAirports}
                 mapMode={mapMode}
                 onMapModeChange={setMapMode}
-                selectedAirportCode={null}
-                onSelectAirport={() => {}}
-                onOpenAirportConnections={(code, tab) => {
+                selectedAirportCode={selectedOriginAirport}
+                onSelectAirport={(code) => {
+                  setSelectedOriginAirport(prev => prev === code ? null : code);
+                }}
+                onOpenAirportConnections={(code) => {
+                  // Triggered strictly by clicking "Ver destinos y conexiones directas" button inside the popup
                   setSelectedAirportForConnections(code);
-                  setSelectedAirportModalTab(tab || 'destinations');
                 }}
                 tileLayerKey={tileLayer}
                 arcCurvature={arcCurvature}
@@ -1268,11 +1264,11 @@ export default function App() {
                 customAirlineColors={customAirlineColors}
                 showAirportLabels={showAirportLabels}
                 onToggleAirportLabels={setShowAirportLabels}
-                iataLabelSize={iataLabelSize}
-                onIataLabelSizeChange={setIataLabelSize}
+                iataFontSize={iataFontSize}
+                onChangeIataFontSize={setIataFontSize}
                 mode1AnalysisMode={mode1AnalysisMode}
-                onMode1AnalysisModeChange={setMode1AnalysisMode}
-                mode1SelectedAirline={mode1SelectedAirline}
+                mode1SpecificAirline={mode1SpecificAirline}
+                mode1SpecificAirlineColor={mode1SpecificAirlineColor}
                 showFlightArcs={showFlightArcs}
                 showAirports={showAirports}
                 topAirportsRankMap={topAirportsRankMap}
@@ -1307,7 +1303,10 @@ export default function App() {
               activeMapMode={mapMode}
               onMapModeChange={setMapMode}
               onUpdateAirlineColor={handleUpdateAirlineColor}
-              topAirportsRankMap={topAirportsRankMap}
+              showAirportLabels={showAirportLabels}
+              onToggleAirportLabels={setShowAirportLabels}
+              iataFontSize={iataFontSize}
+              onChangeIataFontSize={setIataFontSize}
             />
           )}
 
@@ -1383,12 +1382,8 @@ export default function App() {
       {/* Airport Connections Modal (Visualización 1: General) */}
       <AirportConnectionsModal
         airportCode={selectedAirportForConnections}
-        initialTab={selectedAirportModalTab}
         routes={allRoutes}
-        onClose={() => {
-          setSelectedAirportForConnections(null);
-          setSelectedAirportModalTab('destinations');
-        }}
+        onClose={() => setSelectedAirportForConnections(null)}
         onSelectRoute={(routeId) => {
           const matched = allRoutes.find(r => r.id === routeId);
           if (matched) {

@@ -28,38 +28,43 @@
   line-height: 1.5 !important;
 }
 
-.leaflet-tooltip,
-.leaflet-tooltip-top,
-.leaflet-tooltip-bottom,
-.leaflet-tooltip-left,
-.leaflet-tooltip-right,
-.custom-airport-tooltip,
-.permanent-iata-tooltip,
-.permanent-top-tooltip {
-  pointer-events: none !important;
-  background: transparent !important;
-  border: none !important;
-  border-radius: 0 !important;
-  padding: 0 !important;
-  margin: 0 !important;
-  box-shadow: none !important;
-  backdrop-filter: none !important;
+.leaflet-tooltip {
+  background: rgba(11, 15, 25, 0.95) !important;
+  backdrop-filter: blur(8px) !important;
+  border: 1px solid rgba(56, 189, 248, 0.35) !important;
+  color: #f8fafc !important;
+  border-radius: 8px !important;
+  padding: 5px 9px !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6) !important;
 }
 
-.leaflet-tooltip:before,
-.leaflet-tooltip:after,
+.leaflet-tooltip.custom-airport-tooltip,
+.leaflet-tooltip.permanent-iata-tooltip,
+.leaflet-tooltip.permanent-top-tooltip {
+  pointer-events: none !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+.leaflet-tooltip.permanent-iata-tooltip::before,
+.leaflet-tooltip.permanent-iata-tooltip::after,
 .leaflet-tooltip-top:before,
 .leaflet-tooltip-bottom:before,
 .leaflet-tooltip-left:before,
-.leaflet-tooltip-right:before,
-.custom-airport-tooltip:before,
-.custom-airport-tooltip:after,
-.permanent-iata-tooltip:before,
-.permanent-iata-tooltip:after,
-.permanent-top-tooltip:before,
-.permanent-top-tooltip:after {
+.leaflet-tooltip-right:before {
   display: none !important;
-  border: none !important;
+}
+
+/* Dynamic IATA Code Labels Responsive Sizing */
+.airport-iata-badge {
+  font-size: var(--iata-font-size, 11px) !important;
 }
 
 /* Custom Airport Markers */

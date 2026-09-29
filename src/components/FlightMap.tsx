@@ -2,9 +2,10 @@ import React, { useEffect, useRef, useState, useMemo } from 'react';
 import L from 'leaflet';
 import { FlightRoute, Airport, MapVisualizationMode, UniqueRouteCorridor, UniqueRoutesAnalysisMode } from '../types';
 import { generateGreatCircleArc } from '../utils/geodesic';
-import { exportMapToImage } from '../utils/exporter';
+import { exportMapToImage, MEXICO_MAINLAND_OUTLINE, BAJA_PENINSULA_OUTLINE } from '../utils/exporter';
 import { getUniqueRouteCorridors, getAirportConnections } from '../utils/dataParser';
 import { resolveAirport, findAirportByCoordinates, isCoordinateLike } from '../data/mexicoDemoData';
+import mexicoStatesData from '../data/mexicoStates.json';
 import {
   Layers,
   ZoomIn,
@@ -30,7 +31,6 @@ import {
   RotateCcw,
   Move,
   Tag,
-  Type,
 } from 'lucide-react';
 
 interface FlightMapProps {
@@ -42,13 +42,14 @@ interface FlightMapProps {
   onMapModeChange?: (mode: MapVisualizationMode) => void;
   selectedAirportCode?: string | null;
   onSelectAirport?: (airportCode: string) => void;
-  onOpenAirportConnections?: (airportCode: string, initialTab?: 'destinations' | 'airlines') => void;
+  onOpenAirportConnections?: (airportCode: string) => void;
   tileLayerKey?: 'dark' | 'light' | 'osm' | 'satellite' | 'topo';
   arcCurvature?: number;
   colorScheme?: 'airline' | 'density' | 'cyan' | 'traffic';
   showAirportLabels?: boolean;
   onToggleAirportLabels?: (show: boolean) => void;
-  airportColorOverride?: string;
+  iataFontSize?: number;
+  onChangeIataFontSize?: (size: number) => void;
   showFlightArcs?: boolean;
   showAirports?: boolean;
   animateFlow?: boolean;
@@ -73,31 +74,35 @@ interface FlightMapProps {
   onSelectAllAirlines?: () => void;
   onDeselectAllAirlines?: () => void;
   onUpdateAirlineColor?: (airline: string, color: string) => void;
+  // Specific analysis for Mode 1 (passed from Sidebar or local)
   mode1AnalysisMode?: 'standard' | 'specific';
-  onMode1AnalysisModeChange?: (mode: 'standard' | 'specific') => void;
-  mode1SelectedAirline?: string | null;
-  iataLabelSize?: 'sm' | 'md' | 'lg';
-  onIataLabelSizeChange?: (size: 'sm' | 'md' | 'lg') => void;
+  mode1SpecificAirline?: string;
+  mode1SpecificAirlineColor?: string;
+  // For comparison mode coloring in Mode 1
+  isComparePane?: boolean;
+  compareAirlineColor?: string;
   className?: string;
 }
 
 export const TILE_LAYERS = {
   dark: {
-    name: 'Radar Oscuro (Esri Dark Canvas)',
-    url: 'https://server.arcgisonline.com/arcgis/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
-    attribution: '&copy; Esri &mdash; OpenStreetMap contributors',
+    name: 'Radar Oscuro (Esri Aeronáutico)',
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+    referenceUrl: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}',
+    attribution: '&copy; Esri &mdash; HERE, Garmin, USGS',
     maxZoom: 16,
   },
   light: {
-    name: 'Cartográfico Claro (Esri Light Canvas)',
-    url: 'https://server.arcgisonline.com/arcgis/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
-    attribution: '&copy; Esri &mdash; OpenStreetMap contributors',
+    name: 'Cartográfico Claro (Esri Canvas)',
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+    referenceUrl: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}',
+    attribution: '&copy; Esri &mdash; HERE, Garmin, USGS',
     maxZoom: 16,
   },
   osm: {
-    name: 'Cartográfico Estándar (Voyager)',
-    url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-    attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+    name: 'OpenStreetMap Estándar',
+    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attribution: '&copy; OpenStreetMap contributors',
     maxZoom: 19,
   },
   satellite: {
@@ -217,7 +222,8 @@ export const FlightMap: React.FC<FlightMapProps> = ({
   colorScheme = 'airline',
   showAirportLabels = true,
   onToggleAirportLabels,
-  airportColorOverride,
+  iataFontSize = 11,
+  onChangeIataFontSize,
   showFlightArcs = true,
   showAirports = true,
   animateFlow = false,
@@ -243,15 +249,17 @@ export const FlightMap: React.FC<FlightMapProps> = ({
   onDeselectAllAirlines,
   onUpdateAirlineColor,
   mode1AnalysisMode = 'standard',
-  onMode1AnalysisModeChange,
-  mode1SelectedAirline = null,
-  iataLabelSize = 'md',
-  onIataLabelSizeChange,
+  mode1SpecificAirline,
+  mode1SpecificAirlineColor,
+  isComparePane = false,
+  compareAirlineColor,
   className = '',
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const tileLayerRef = useRef<L.TileLayer | null>(null);
+  const referenceTileLayerRef = useRef<L.TileLayer | null>(null);
+  const mexicoGeoJsonLayerRef = useRef<L.GeoJSON | null>(null);
   const routesLayerGroupRef = useRef<L.LayerGroup | null>(null);
   const airportsLayerGroupRef = useRef<L.LayerGroup | null>(null);
   const isMovingFromSyncRef = useRef<boolean>(false);
@@ -259,48 +267,52 @@ export const FlightMap: React.FC<FlightMapProps> = ({
   const [captureSuccess, setCaptureSuccess] = useState<boolean>(false);
   const [isRightLegendExpanded, setIsRightLegendExpanded] = useState<boolean>(true);
 
+  // Local fallback state for IATA Font Size and Label Visibility
+  const [localIataFontSize, setLocalIataFontSize] = useState<number>(11);
+  const activeIataFontSize = iataFontSize ?? localIataFontSize;
+
+  // Immediate CSS custom property sync for zero-latency IATA font size adjustments
+  useEffect(() => {
+    if (mapContainerRef.current) {
+      mapContainerRef.current.style.setProperty('--iata-font-size', `${activeIataFontSize}px`);
+    }
+  }, [activeIataFontSize]);
+
+  // Global bridge for airport connection detail modal trigger
+  useEffect(() => {
+    (window as any).__gis_open_connections = (code: string) => {
+      if (onOpenAirportConnections) {
+        onOpenAirportConnections(code);
+      }
+    };
+  }, [onOpenAirportConnections]);
+
+  const [localShowAirportLabels, setLocalShowAirportLabels] = useState<boolean>(true);
+  const activeShowAirportLabels = showAirportLabels ?? localShowAirportLabels;
+  const [showIataPopover, setShowIataPopover] = useState<boolean>(false);
+
+  const handleToggleLabels = (show: boolean) => {
+    setLocalShowAirportLabels(show);
+    if (onToggleAirportLabels) onToggleAirportLabels(show);
+  };
+
+  const handleChangeIataFontSize = (size: number) => {
+    const clamped = Math.max(8, Math.min(18, size));
+    setLocalIataFontSize(clamped);
+    if (mapContainerRef.current) {
+      mapContainerRef.current.style.setProperty('--iata-font-size', `${clamped}px`);
+    }
+    if (onChangeIataFontSize) onChangeIataFontSize(clamped);
+  };
+
   // Mode 2 Airport Selection and labels toggle ("con nombres" vs "sin nombres")
   const [mode2SelectedAirport, setMode2SelectedAirport] = useState<string | null>(null);
   const [mode2ShowConnectedLabels, setMode2ShowConnectedLabels] = useState<boolean>(true);
 
-  // Global IATA labels toggle ("Con nombres" vs "Sin nombres") across all modes (default: true)
-  const [showIataLabels, setShowIataLabels] = useState<boolean>(showAirportLabels ?? true);
-
-  // Keep in sync if showAirportLabels prop updates from parent
-  useEffect(() => {
-    if (showAirportLabels !== undefined) {
-      setShowIataLabels(showAirportLabels);
-    }
-  }, [showAirportLabels]);
-
-  // Draggable Legend State & Resize (default to 'compact' for optimal fit)
+  // Draggable Legend State & Resize
   const [legendPos, setLegendPos] = useState<{ x: number; y: number } | null>(null);
   const [isDraggingLegend, setIsDraggingLegend] = useState<boolean>(false);
-  const [legendSize, setLegendSize] = useState<'compact' | 'normal' | 'large'>(() => {
-    try {
-      const saved = localStorage.getItem('gis_mexico_legend_size');
-      if (saved === 'compact' || saved === 'normal' || saved === 'large') return saved;
-    } catch {}
-    return 'compact';
-  });
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('gis_mexico_legend_size', legendSize);
-    } catch {}
-  }, [legendSize]);
-
-  // Global window handler to guarantee popup button clicks always open the modal directly
-  useEffect(() => {
-    (window as any).__afacOpenAirportConnections = (code: string, tab?: 'destinations' | 'airlines') => {
-      if (onOpenAirportConnections) {
-        onOpenAirportConnections(code, tab || 'destinations');
-      }
-    };
-    return () => {
-      delete (window as any).__afacOpenAirportConnections;
-    };
-  }, [onOpenAirportConnections]);
+  const [legendSize, setLegendSize] = useState<'compact' | 'normal' | 'large'>('normal');
   const legendContainerRef = useRef<HTMLDivElement>(null);
   const dragStartRef = useRef<{ startX: number; startY: number; posX: number; posY: number }>({
     startX: 0,
@@ -530,13 +542,10 @@ export const FlightMap: React.FC<FlightMapProps> = ({
   // Compute unique route corridors for Mode 3 (rendered on map)
   const uniqueCorridors: UniqueRouteCorridor[] = useMemo(() => {
     if (mapMode === 'unique_routes') {
-      if (selectedAirlines && selectedAirlines.includes('__NONE__')) {
-        return [];
-      }
       return getUniqueRouteCorridors(routes);
     }
     return [];
-  }, [routes, mapMode, selectedAirlines]);
+  }, [routes, mapMode]);
 
   // Base routes to ensure airlines in Mode 2 and Mode 3 right panels are never removed upon deselection
   const baseRoutesForAirlines = useMemo(() => {
@@ -572,11 +581,6 @@ export const FlightMap: React.FC<FlightMapProps> = ({
   // Mode 3: Exclusive airlines list that retains all airlines even when unselected
   const exclusiveAirlinesCount = useMemo(() => {
     const counts: Record<string, number> = {};
-    if (availableAirlines && availableAirlines.length > 0) {
-      availableAirlines.forEach(a => {
-        counts[a] = 0;
-      });
-    }
     baseUniqueCorridors.forEach(c => {
       if (c.airlines.length === 1) {
         const a = c.airlines[0].airline;
@@ -584,7 +588,7 @@ export const FlightMap: React.FC<FlightMapProps> = ({
       }
     });
     return Object.entries(counts).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-  }, [baseUniqueCorridors, availableAirlines]);
+  }, [baseUniqueCorridors]);
 
   // Mode 2: Airlines list that retains all airlines even when unselected
   const mode2AirlinesCount = useMemo(() => {
@@ -625,6 +629,35 @@ export const FlightMap: React.FC<FlightMapProps> = ({
     return [];
   }, [selectedAirportCode, routes, mapMode]);
 
+  const getMexicoGeoJsonStyle = (theme: string) => {
+    if (theme === 'light') {
+      return {
+        color: '#0284c7',
+        weight: 1.4,
+        opacity: 0.7,
+        fillColor: '#38bdf8',
+        fillOpacity: 0.05,
+      };
+    }
+    if (theme === 'satellite' || theme === 'topo') {
+      return {
+        color: '#38bdf8',
+        weight: 1.6,
+        opacity: 0.85,
+        fillColor: '#000000',
+        fillOpacity: 0,
+      };
+    }
+    // Dark mode (radar)
+    return {
+      color: '#38bdf8',
+      weight: 1.3,
+      opacity: 0.75,
+      fillColor: '#0e7490',
+      fillOpacity: 0.08,
+    };
+  };
+
   // Initialize Map
   useEffect(() => {
     if (!mapContainerRef.current || mapInstanceRef.current) return;
@@ -644,6 +677,22 @@ export const FlightMap: React.FC<FlightMapProps> = ({
       crossOrigin: true,
     }).addTo(map);
 
+    // Add Reference Layer if available (e.g. Esri Dark Reference for political borders and labels)
+    if (activeTileConfig.referenceUrl) {
+      const refLayer = L.tileLayer(activeTileConfig.referenceUrl, {
+        maxZoom: activeTileConfig.maxZoom,
+        crossOrigin: true,
+      }).addTo(map);
+      referenceTileLayerRef.current = refLayer;
+    }
+
+    // Republic of Mexico 32 States Vector Overlay: guarantees clear, beautiful Mexican territory visibility in ALL modes
+    const mexicoLayer = L.geoJSON(mexicoStatesData as any, {
+      style: getMexicoGeoJsonStyle(tileLayerKey),
+      interactive: false,
+    }).addTo(map);
+    mexicoGeoJsonLayerRef.current = mexicoLayer;
+
     const routesGroup = L.layerGroup().addTo(map);
     const airportsGroup = L.layerGroup().addTo(map);
 
@@ -651,6 +700,9 @@ export const FlightMap: React.FC<FlightMapProps> = ({
     routesLayerGroupRef.current = routesGroup;
     airportsLayerGroupRef.current = airportsGroup;
     mapInstanceRef.current = map;
+    if (mapContainerRef.current) {
+      (mapContainerRef.current as any)._leaflet_map = map;
+    }
 
     map.on('moveend', () => {
       if (isMovingFromSyncRef.current) {
@@ -687,13 +739,29 @@ export const FlightMap: React.FC<FlightMapProps> = ({
     const activeTileConfig = TILE_LAYERS[tileLayerKey] || TILE_LAYERS.dark;
 
     mapInstanceRef.current.removeLayer(tileLayerRef.current);
+    if (referenceTileLayerRef.current) {
+      mapInstanceRef.current.removeLayer(referenceTileLayerRef.current);
+      referenceTileLayerRef.current = null;
+    }
+
     const newTileLayer = L.tileLayer(activeTileConfig.url, {
       attribution: activeTileConfig.attribution,
       maxZoom: activeTileConfig.maxZoom,
       crossOrigin: true,
     }).addTo(mapInstanceRef.current);
-
     tileLayerRef.current = newTileLayer;
+
+    if (activeTileConfig.referenceUrl) {
+      const newRefLayer = L.tileLayer(activeTileConfig.referenceUrl, {
+        maxZoom: activeTileConfig.maxZoom,
+        crossOrigin: true,
+      }).addTo(mapInstanceRef.current);
+      referenceTileLayerRef.current = newRefLayer;
+    }
+
+    if (mexicoGeoJsonLayerRef.current) {
+      mexicoGeoJsonLayerRef.current.setStyle(getMexicoGeoJsonStyle(tileLayerKey));
+    }
   }, [tileLayerKey]);
 
   // Handle external sync pan/zoom
@@ -723,84 +791,12 @@ export const FlightMap: React.FC<FlightMapProps> = ({
     airportsLayerGroupRef.current.clearLayers();
 
     // ==========================================
-    // MODE 1: VISUALIZACIÓN GENERAL DE AEROPUERTOS Y CONEXIONES
+    // MODE 1: VISUALIZACIÓN GENERAL DE AEROPUERTOS Y HUBS
     // ==========================================
+    // En el Modo 1 no se dibujan rutas/arcos en el mapa (ni al dar clic ni al seleccionar una aerolínea).
+    // El mapa visualiza exclusivamente los aeropuertos y sus datos institucionales.
     if (mapMode === 'airports') {
-      // If an airport is selected, draw its radial connection arcs to its destinations
-      if (selectedAirportCode && showFlightArcs) {
-        const originAirport = airports.find(a => a.code === selectedAirportCode);
-        if (originAirport) {
-          activeAirportConnections.forEach(conn => {
-            const arcPoints = generateGreatCircleArc(
-              [originAirport.lat, originAirport.lng],
-              [conn.destLat, conn.destLng],
-              35,
-              arcCurvature
-            );
-
-            // Mode 1 Analysis Mode: Standard vs Análisis Específico (from Mode 3)
-            let arcColor = '#06b6d4';
-            const isSingleCarrier = conn.airlines.length === 1;
-            if (mode1AnalysisMode === 'specific') {
-              if (isSingleCarrier) {
-                arcColor = getAirlineColor(conn.airlines[0], customAirlineColors);
-              } else {
-                arcColor = uniqueMultiColor || '#f59e0b';
-              }
-            }
-
-            const polyline = L.polyline(arcPoints, {
-              color: arcColor,
-              weight: Math.min(5.5, Math.max(2.5, conn.totalFlights / 380)),
-              opacity: 0.88,
-              dashArray: animateFlow ? '5, 8' : undefined,
-              lineCap: 'round',
-            });
-
-            // Popup on the radial connection arc
-            const popupHtml = `
-              <div class="p-1 text-slate-100 min-w-[220px]">
-                <div class="flex items-center justify-between border-b border-slate-700 pb-1.5 mb-1.5">
-                  <span class="text-xs font-mono font-bold text-cyan-400 bg-cyan-950 px-2 py-0.5 rounded border border-cyan-800">
-                    ${selectedAirportCode} ➔ ${conn.destCode}
-                  </span>
-                  <span class="text-[10px] text-slate-400">${conn.flightType}</span>
-                </div>
-                <div class="text-xs font-bold text-white">${conn.destName}</div>
-                <div class="text-[11px] text-slate-300 mt-1">
-                  Distancia: ${Math.round(conn.distanceKm).toLocaleString()} km (${Math.round(conn.distanceNm)} NM)
-                </div>
-                ${mode1AnalysisMode === 'specific' ? `
-                  <div class="mt-1.5 p-1.5 rounded-lg bg-slate-900 border border-slate-800 text-[11px]">
-                    <span class="block text-[10px] text-slate-400 uppercase font-bold">Clasificación de Ruta (Modo 3):</span>
-                    <span class="font-bold flex items-center gap-1.5 mt-0.5" style="color: ${arcColor}">
-                      <span class="w-2.5 h-2.5 rounded-full inline-block shrink-0" style="background-color: ${arcColor}"></span>
-                      ${isSingleCarrier ? `Operador Único: ${conn.airlines[0]}` : `Ruta Compartida (${conn.airlines.length} operadores)`}
-                    </span>
-                    <div class="text-[10px] text-slate-400 mt-1">
-                      Operadores: <span class="text-slate-200">${conn.airlines.join(', ')}</span>
-                    </div>
-                  </div>
-                ` : `
-                  <div class="text-[11px] text-cyan-300 mt-0.5 font-semibold">
-                    ${conn.airlines.length} aerolíneas autorizadas: ${conn.airlines.join(', ')}
-                  </div>
-                `}
-              </div>
-            `;
-            polyline.bindPopup(popupHtml);
-
-            polyline.on('mouseover', () => {
-              polyline.setStyle({ weight: 6, color: '#38bdf8', opacity: 1 });
-            });
-            polyline.on('mouseout', () => {
-              polyline.setStyle({ weight: Math.min(5.5, Math.max(2.5, conn.totalFlights / 380)), color: arcColor, opacity: 0.88 });
-            });
-
-            routesLayerGroupRef.current?.addLayer(polyline);
-          });
-        }
-      }
+      // Intentionally clear routes in Mode 1 - no flight arcs or radial connection lines on the map
     }
 
     // ==========================================
@@ -1120,16 +1116,7 @@ export const FlightMap: React.FC<FlightMapProps> = ({
     // DRAW AIRPORT MARKERS
     // ==========================================
     if (showAirports) {
-      // If a Top N is active, strictly filter the airport list to the Top N
-      const activeAirportsList = (selectedTopN && selectedTopN > 0 && topAirportsRankMap)
-        ? airports.filter(airport => {
-            const code = airport.code;
-            const rank = topAirportsRankMap.get(code) ?? (airport.iata ? topAirportsRankMap.get(airport.iata) : undefined);
-            return rank !== undefined && rank <= selectedTopN;
-          })
-        : airports;
-
-      activeAirportsList.forEach(airport => {
+      airports.forEach(airport => {
         // Resolve official airport metadata to guarantee no raw coordinates are ever displayed
         const resolvedProfile = resolveAirport(airport.code, airport.lat, airport.lng) || findAirportByCoordinates(airport.lat, airport.lng);
         
@@ -1156,9 +1143,30 @@ export const FlightMap: React.FC<FlightMapProps> = ({
 
         const rankNum = topAirportsRankMap?.get(officialCode) ?? topAirportsRankMap?.get(airport.code);
         const isRanked = rankNum !== undefined;
+        const isTopSelected = Boolean(selectedTopN);
+
+        // Point 5: When a Top is selected, strictly filter the map to only show the Top N airports
+        if (isTopSelected && (!isRanked || (rankNum as number) > (selectedTopN as number))) {
+          return;
+        }
+
         const isMode1 = mapMode === 'airports';
         const isSelectedOrigin = isMode1 && (selectedAirportCode === airport.code || selectedAirportCode === officialCode);
-        const isMajorHub = isRanked ? rankNum <= 4 : ['MEX', 'CUN', 'GDL', 'MTY', 'TIJ', 'NLU'].includes(officialCode);
+        const isMajorHub = ['MEX', 'CUN', 'GDL', 'MTY', 'TIJ', 'NLU'].includes(officialCode);
+
+        // Compute airport connections and operating airlines (use allRoutes pool so airport metadata is complete)
+        const airportMatchCodes = new Set([officialCode, airport.code].filter(Boolean));
+        const effectiveRoutesForAirport = (allRoutes && allRoutes.length > 0 ? allRoutes : routes);
+        const airportMode2Routes = effectiveRoutesForAirport.filter(
+          r => airportMatchCodes.has(r.originCode) || airportMatchCodes.has(r.destCode)
+        );
+
+        // Airlines list computation for airport
+        const airlinesAtAirport = new Map<string, number>();
+        airportMode2Routes.forEach(r => {
+          airlinesAtAirport.set(r.airline, (airlinesAtAirport.get(r.airline) || 0) + 1);
+        });
+        const airlinesList = Array.from(airlinesAtAirport.entries()).sort((a, b) => b[1] - a[1]);
 
         const isMode2 = mapMode === 'routes_by_airline';
         const isMode2Selected = isMode2 && (mode2SelectedAirport === officialCode || mode2SelectedAirport === airport.code);
@@ -1166,12 +1174,51 @@ export const FlightMap: React.FC<FlightMapProps> = ({
         const isMode2Dimmed = isMode2 && Boolean(mode2SelectedAirport) && !isMode2Selected && !isMode2Connected;
 
         // Radius and pin color calculation
+        // Point 8: Verify that NO airport appears in gold/amber solely for being the main hub or rank 1!
         let radius = 7;
         let pinColor = '#06b6d4';
         let shadowGlow = '8px #06b6d4';
-        let isMode1Dimmed = false;
 
-        if (isMode2) {
+        if (isMode1) {
+          if (isComparePane) {
+            // Point 4: In Mode 1 compare view, color airports by the assigned airline of that pane
+            if (compareAirlineColor && compareAirlineColor !== '#06b6d4' && compareAirlineColor !== '#c084fc') {
+              pinColor = compareAirlineColor;
+              shadowGlow = `10px ${compareAirlineColor}`;
+            } else {
+              // If pane has 'all' airlines, color each airport by its primary airline operator
+              const topAirline = airlinesList[0]?.[0];
+              if (topAirline) {
+                const aColor = getAirlineColor(topAirline, customAirlineColors);
+                pinColor = aColor;
+                shadowGlow = `10px ${aColor}`;
+              } else {
+                pinColor = compareAirlineColor || '#06b6d4';
+                shadowGlow = `10px ${pinColor}`;
+              }
+            }
+            radius = isSelectedOrigin ? 10 : 8;
+          } else if (mode1AnalysisMode === 'specific' && mode1SpecificAirline) {
+            // Point 7.1: Mode 1 Análisis Específico: color airports that have routes by the chosen airline
+            const hasOp = airportMode2Routes.some(
+              r => r.airline.toLowerCase().trim() === mode1SpecificAirline.toLowerCase().trim()
+            );
+            if (hasOp) {
+              const opColor = mode1SpecificAirlineColor || getAirlineColor(mode1SpecificAirline, customAirlineColors);
+              pinColor = opColor;
+              shadowGlow = `12px ${opColor}`;
+              radius = 8.5;
+            } else {
+              pinColor = '#475569';
+              shadowGlow = 'none';
+              radius = 5.5;
+            }
+          } else {
+            radius = isSelectedOrigin ? 10 : 8;
+            pinColor = isSelectedOrigin ? '#10b981' : '#06b6d4';
+            shadowGlow = isSelectedOrigin ? '14px #10b981' : '8px #06b6d4';
+          }
+        } else if (isMode2) {
           if (isMode2Selected) {
             radius = 10;
             pinColor = '#10b981'; // Emerald for selected origin
@@ -1185,58 +1232,27 @@ export const FlightMap: React.FC<FlightMapProps> = ({
             pinColor = '#475569'; // Dimmed slate for non-connected
             shadowGlow = 'none';
           } else {
-            radius = isMajorHub ? 8.5 : 7;
+            radius = 7.5;
             pinColor = '#06b6d4';
             shadowGlow = '8px #06b6d4';
           }
-        } else if (isMode1) {
-          if (mode1AnalysisMode === 'specific' && mode1SelectedAirline) {
-            const cleanAirline = mode1SelectedAirline.trim().toLowerCase();
-            const operatesAirline = (allRoutes || routes).some(
-              r => (r.originCode === officialCode || r.destCode === officialCode || r.originCode === airport.code || r.destCode === airport.code) &&
-                   r.airline && r.airline.trim().toLowerCase() === cleanAirline
-            );
-
-            if (operatesAirline) {
-              pinColor = getAirlineColor(mode1SelectedAirline, customAirlineColors);
-              radius = isSelectedOrigin ? 11 : 9.5;
-              shadowGlow = `14px ${pinColor}`;
-            } else {
-              pinColor = '#334155';
-              radius = 5.5;
-              shadowGlow = 'none';
-              isMode1Dimmed = true;
-            }
-          } else if (airportColorOverride) {
-            radius = isSelectedOrigin ? 10 : 8;
-            pinColor = airportColorOverride;
-            shadowGlow = `8px ${pinColor}`;
-          } else {
-            radius = isSelectedOrigin ? 10 : 8;
-            pinColor = '#06b6d4';
-            shadowGlow = `8px ${pinColor}`;
-          }
         } else {
-          radius = isRanked ? (rankNum <= 4 ? 9 : 7.5) : 7;
+          // Mode 3 (Unique routes): Clean cyan, no automatic gold for hub
+          radius = 7.5;
           pinColor = '#06b6d4';
           shadowGlow = '8px #06b6d4';
         }
 
-        const isMode1Active = isMode1 && mode1AnalysisMode === 'specific' && mode1SelectedAirline && !isMode1Dimmed;
-        const hasPulseRing = isSelectedOrigin || isMode2Selected || isMode2Connected || isMode1Active;
+        const hasPulseRing = isSelectedOrigin || isMode2Selected || isMode2Connected;
         const pulseBorder = isMode2Selected
           ? '2px solid rgba(16, 185, 129, 0.9)'
           : isMode2Connected
           ? '2px solid rgba(245, 158, 11, 0.9)'
-          : isMode1
-          ? `2px solid ${pinColor}`
-          : '2px solid rgba(6, 182, 212, 0.8)';
-
-        const isItemDimmed = isMode2Dimmed || isMode1Dimmed;
+          : '2px solid rgba(6, 182, 212, 0.9)';
 
         const iconHtml = `
           <div class="airport-marker-hitbox flex items-center justify-center" style="width: 28px; height: 28px; cursor: pointer;">
-            <div class="airport-pin" style="width:${radius * 2}px; height:${radius * 2}px; background-color:${pinColor}; border: ${isItemDimmed ? '1px solid #64748b' : '2px solid #ffffff'}; box-shadow: 0 0 ${shadowGlow}; opacity: ${isItemDimmed ? 0.35 : 1};">
+            <div class="airport-pin" style="width:${radius * 2}px; height:${radius * 2}px; background-color:${pinColor}; border: ${isMode2Dimmed ? '1px solid #64748b' : '2px solid #ffffff'}; box-shadow: 0 0 ${shadowGlow}; opacity: ${isMode2Dimmed ? 0.35 : 1};">
               ${hasPulseRing ? `<div class="pulse-ring" style="border: ${pulseBorder};"></div>` : ''}
             </div>
           </div>
@@ -1251,166 +1267,62 @@ export const FlightMap: React.FC<FlightMapProps> = ({
 
         const marker = L.marker([airport.lat, airport.lng], {
           icon: customIcon,
-          title: isMode2 ? officialCode : `${officialCode} - ${officialName}`,
+          title: `${officialCode} - ${officialName}`,
         });
 
-        // Airport Tooltip & Label Logic
-        // Requirements:
-        // - Single border (eliminar doble recuadro): exactly one crisp outer border, no nested borders.
-        // - Default: Claves IATA visible by default across all visualization modes (Mode 1, Mode 2, Mode 3, Compare).
-        // - Right-side button "Con nombres / Sin nombres" to toggle labels.
-        // - Size adjuster: 'sm' (9px), 'md' (11px, default), 'lg' (13px).
-        // - Homologación de clave IATA:
-        //   * When NO top is selected: strictly officialCode (e.g. "CUL"), removing any #rank.
-        //   * When a Top is selected: #rankNum officialCode (e.g. "#11 CUL"), and do NOT display the long airport name.
-        //   * Full details and officialName are always accessible on click or double-click.
-        if (showAirportLabels) {
-          const isTopActive = Boolean(selectedTopN && selectedTopN > 0);
-          const showRankInBadge = isTopActive && isRanked;
-
-          let badgeFontSize = '11px';
-          let badgePadding = '2px 5.5px';
-          let tooltipOffset = -13;
-          if (iataLabelSize === 'sm') {
-            badgeFontSize = '9px';
-            badgePadding = '1.5px 4px';
-            tooltipOffset = -11;
-          } else if (iataLabelSize === 'lg') {
-            badgeFontSize = '13px';
-            badgePadding = '3px 7px';
-            tooltipOffset = -15;
+        // Points 4, 5, 6: Airport IATA Label with Single Clean Frame and Dynamic Font Size
+        // - Single frame (no double box)
+        // - Homologated without '#rank' when no top is selected (shows plain 'CUL', 'MEX')
+        // - Shows '#rank' ONLY when a top is explicitly selected (shows 'CUL #11')
+        // - Default visible across all modes unless toggled to 'Sin nombres'
+        if (activeShowAirportLabels) {
+          let badgeText = officialCode;
+          let rankBadge = '';
+          if (isTopSelected && isRanked) {
+            rankBadge = `<span style="font-size:0.8em; margin-left:3px; opacity:0.9; color:#38bdf8; font-weight:700;">#${rankNum}</span>`;
           }
 
-          // Single border color calculation
-          let badgeBorderColor = 'rgba(6, 182, 212, 0.8)';
-          let badgeTextColor = '#67e8f9';
-
-          if (isMode1) {
-            if (mode1AnalysisMode === 'specific' && mode1SelectedAirline) {
-              badgeBorderColor = isMode1Dimmed ? '#475569' : pinColor;
-              badgeTextColor = isMode1Dimmed ? '#94a3b8' : '#ffffff';
-            } else {
-              badgeBorderColor = pinColor;
-              badgeTextColor = (airportColorOverride || (selectedAirlines && selectedAirlines.length === 1)) ? '#ffffff' : '#67e8f9';
-            }
-          } else if (isMode2) {
-            if (isMode2Selected) {
-              badgeBorderColor = '#10b981';
-              badgeTextColor = '#6ee7b7';
-            } else if (isMode2Connected) {
-              badgeBorderColor = '#f59e0b';
-              badgeTextColor = '#fde68a';
-            } else if (isMode2Dimmed) {
-              badgeBorderColor = '#475569';
-              badgeTextColor = '#94a3b8';
-            } else {
-              badgeBorderColor = 'rgba(6, 182, 212, 0.8)';
-              badgeTextColor = '#67e8f9';
-            }
-          } else if (mapMode === 'unique_routes') {
-            badgeBorderColor = 'rgba(6, 182, 212, 0.8)';
-            badgeTextColor = '#67e8f9';
-          }
-
-          const rankHtml = showRankInBadge
-            ? `<span style="opacity: 0.8; font-size: 0.85em; font-weight: 700; margin-right: 1.5px;">#${rankNum}</span>`
-            : '';
-
-          // Single border badge (NO double frame, NO nested bordered elements)
-          const tooltipHtml = `
-            <div class="airport-iata-badge font-mono" style="
-              display: inline-flex;
-              align-items: center;
-              justify-content: center;
-              gap: 2px;
-              background-color: rgba(10, 15, 26, 0.94);
-              border: 1px solid ${badgeBorderColor};
-              border-radius: 5px;
-              padding: ${badgePadding};
-              font-size: ${badgeFontSize};
+          const singleBoxHtml = `
+            <div class="airport-iata-badge" style="
+              font-family: 'JetBrains Mono', 'Plus Jakarta Sans', monospace, sans-serif;
+              font-size: ${activeIataFontSize}px;
               font-weight: 800;
               line-height: 1;
-              color: ${badgeTextColor};
-              box-shadow: 0 2px 6px rgba(0, 0, 0, 0.55);
-              pointer-events: none;
+              padding: 2.5px 5.5px;
+              border-radius: 6px;
+              background: rgba(11, 15, 25, 0.95);
+              color: ${isMode1 && isComparePane ? pinColor : '#38bdf8'};
+              border: 1px solid ${isMode1 && isComparePane ? pinColor : 'rgba(56, 189, 248, 0.65)'};
+              box-shadow: 0 4px 12px rgba(0, 0, 0, 0.65);
               white-space: nowrap;
+              display: inline-flex;
+              align-items: center;
               letter-spacing: 0.04em;
+              pointer-events: none;
             ">
-              ${rankHtml}<span style="letter-spacing: 0.05em;">${officialCode}</span>
+              <span>${badgeText}</span>${rankBadge}
             </div>
           `;
 
-          // Permanent by default across all modes if showIataLabels is true ("Con nombres")
-          // If false ("Sin nombres"), only visible on hover
-          marker.bindTooltip(tooltipHtml, {
-            permanent: showIataLabels,
+          marker.bindTooltip(singleBoxHtml, {
+            permanent: true,
             direction: 'top',
-            offset: [0, tooltipOffset],
-            opacity: 0.98,
-            className: 'custom-airport-tooltip',
+            offset: [0, -radius - 4],
+            className: 'permanent-iata-tooltip',
           });
         }
 
-        // Click & Double-Click Handler for Airport Marker
-        // Single click: Opens summary popup across all modes (Mode 1, Mode 2, Mode 3)
-        // Double click: Directly opens comprehensive connections modal
-        let airportMarkerClickTimer: any = null;
-
-        marker.on('click', (e) => {
-          if (e.originalEvent) {
-            L.DomEvent.stopPropagation(e.originalEvent);
-          }
-          if (airportMarkerClickTimer) {
-            // 2 clics (double click)
-            clearTimeout(airportMarkerClickTimer);
-            airportMarkerClickTimer = null;
-            if (onOpenAirportConnections) {
-              onOpenAirportConnections(officialCode, 'destinations');
-            }
-          } else {
-            airportMarkerClickTimer = setTimeout(() => {
-              airportMarkerClickTimer = null;
-              // Open standard summary popup stably across all modes without wiping layers
-              marker.openPopup();
-            }, 240);
-          }
-        });
-
-        marker.on('dblclick', (e) => {
-          if (e.originalEvent) {
-            L.DomEvent.stopPropagation(e.originalEvent);
-            L.DomEvent.preventDefault(e.originalEvent);
-          }
-          if (airportMarkerClickTimer) {
-            clearTimeout(airportMarkerClickTimer);
-            airportMarkerClickTimer = null;
-          }
-          if (onOpenAirportConnections) {
-            onOpenAirportConnections(officialCode);
-          }
-        });
-
-        // Compute airport connections and operating airlines for popup
-        const airportMatchCodes = new Set([officialCode, airport.code].filter(Boolean));
-        const airportMode2Routes = routes.filter(
-          r => airportMatchCodes.has(r.originCode) || airportMatchCodes.has(r.destCode)
-        );
-
-        const airlinesAtAirport = new Map<string, number>();
-        airportMode2Routes.forEach(r => {
-          airlinesAtAirport.set(r.airline, (airlinesAtAirport.get(r.airline) || 0) + 1);
-        });
-        const airlinesList = Array.from(airlinesAtAirport.entries()).sort((a, b) => b[1] - a[1]);
-
-        // Popup for Airport: Full assigned airport name, code, metrics, and operating airlines
+        // Points 7.1 & 7.2: Standardized First Tab Summary Popup for all Visualization Modes
+        // Displays: Name, IATA, Assigned Routes count, Authorized Airlines count, Airline list with colors,
+        // and button "Ver destinos y conexiones directas"
         const airportPopupHtml = `
           <div class="p-1 text-slate-100 min-w-[280px]">
-            <div class="border-b border-slate-700 pb-2 mb-2">
+            <div class="border-b border-slate-700/80 pb-2 mb-2">
               <div class="flex items-center justify-between mb-1">
                 <span class="text-xs font-mono font-black text-cyan-300 bg-cyan-950/90 px-2.5 py-0.5 rounded border border-cyan-700">
                   ${officialCode}
                 </span>
-                ${isRanked ? `<span class="text-[9px] bg-cyan-950 text-cyan-300 border border-cyan-800 px-2 py-0.5 rounded uppercase font-bold tracking-wider">#${rankNum} TOP RUTAS</span>` : isMajorHub ? '<span class="text-[9px] bg-cyan-950 text-cyan-300 border border-cyan-800 px-1.5 py-0.5 rounded uppercase font-bold tracking-wider">HUB NACIONAL</span>' : '<span class="text-[9px] text-slate-400 uppercase font-semibold">Aeropuerto Nacional</span>'}
+                ${isTopSelected && isRanked ? `<span class="text-[9px] bg-cyan-950 text-cyan-300 border border-cyan-700 px-2 py-0.5 rounded uppercase font-bold tracking-wider">#${rankNum} TOP</span>` : isMajorHub ? '<span class="text-[9px] bg-cyan-950 text-cyan-300 border border-cyan-700 px-2 py-0.5 rounded uppercase font-bold tracking-wider">HUB PRINCIPAL</span>' : '<span class="text-[9px] text-slate-400 uppercase font-semibold">Aeropuerto Nacional</span>'}
               </div>
               <div class="text-sm font-black text-white leading-snug">${officialName}</div>
               <div class="text-[11px] text-cyan-200/90 mt-0.5 font-medium">${officialCity}${officialState && officialState !== officialCity ? `, ${officialState}` : ''}</div>
@@ -1419,7 +1331,7 @@ export const FlightMap: React.FC<FlightMapProps> = ({
             <div class="grid grid-cols-2 gap-2 text-[11px] bg-slate-950 p-2 rounded-xl border border-slate-800 mb-2">
               <div>
                 <span class="text-slate-400 text-[10px] block font-medium">Rutas Asignadas:</span>
-                <span class="font-bold text-cyan-300 font-mono text-xs">${airportMode2Routes.length > 0 ? airportMode2Routes.length : ((airport.outgoingRoutes || 0) + (airport.incomingRoutes || 0))} ruta${(airportMode2Routes.length || (airport.outgoingRoutes || 0) + (airport.incomingRoutes || 0)) === 1 ? '' : 's'}</span>
+                <span class="font-bold text-amber-400 font-mono text-xs">${airportMode2Routes.length > 0 ? airportMode2Routes.length : ((airport.outgoingRoutes || 0) + (airport.incomingRoutes || 0))} ruta${(airportMode2Routes.length || (airport.outgoingRoutes || 0) + (airport.incomingRoutes || 0)) === 1 ? '' : 's'}</span>
               </div>
               <div>
                 <span class="text-slate-400 text-[10px] block font-medium">Aerolíneas Autorizadas:</span>
@@ -1447,53 +1359,54 @@ export const FlightMap: React.FC<FlightMapProps> = ({
               </div>
             ` : ''}
 
-            <div class="grid grid-cols-2 gap-1.5 mt-2 pt-2 border-t border-slate-800">
-              <button 
-                id="btn-open-connections-${officialCode}"
-                type="button"
-                onclick="event.stopPropagation(); window.__afacOpenAirportConnections && window.__afacOpenAirportConnections('${officialCode}', 'destinations');"
-                class="py-1.5 px-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-[10.5px] font-bold transition flex items-center justify-center gap-1 cursor-pointer shadow-sm"
-                title="Ver lista de destinos y conexiones directas"
-              >
-                <span>Destinos Directos</span>
-              </button>
-              <button 
-                id="btn-open-airlines-${officialCode}"
-                type="button"
-                onclick="event.stopPropagation(); window.__afacOpenAirportConnections && window.__afacOpenAirportConnections('${officialCode}', 'airlines');"
-                class="py-1.5 px-2 bg-emerald-700 hover:bg-emerald-600 text-white border border-emerald-500/60 rounded-lg text-[10.5px] font-bold transition flex items-center justify-center gap-1 cursor-pointer shadow-sm"
-                title="Ver todas las aerolíneas con fecha de autorización y total de autorizaciones"
-              >
-                <span>Aerolíneas y Fechas</span>
-              </button>
-            </div>
+            <button 
+              type="button"
+              id="btn-open-connections-${officialCode}"
+              data-airport-code="${officialCode || airport.code}"
+              onclick="window.__gis_open_connections && window.__gis_open_connections('${officialCode || airport.code}'); return false;"
+              class="btn-open-connections w-full py-2 px-3 bg-gradient-to-r from-cyan-600 to-sky-600 hover:from-cyan-500 hover:to-sky-500 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-md mt-1"
+            >
+              <span>Ver destinos y conexiones directas</span>
+            </button>
           </div>
         `;
 
-        // Standard popup across all modes (Mode 1, Mode 2, Mode 3):
-        // Shows official code, name, assigned routes count, operating airlines, and button to open full connections modal
-        marker.bindPopup(airportPopupHtml, {
-          closeButton: true,
-          autoPan: true,
-          className: 'custom-airport-popup',
-        });
+        marker.bindPopup(airportPopupHtml);
 
-        marker.on('popupopen', () => {
-          const btnConn = document.getElementById(`btn-open-connections-${officialCode}`);
-          if (btnConn) {
-            btnConn.onclick = (e) => {
-              e.stopPropagation();
-              if (onOpenAirportConnections) onOpenAirportConnections(officialCode, 'destinations');
+        marker.on('popupopen', (e) => {
+          const popupEl = (e as any)?.popup?.getElement?.() || document.getElementById(`btn-open-connections-${officialCode}`)?.closest('.leaflet-popup');
+          const btn = popupEl?.querySelector('.btn-open-connections') as HTMLElement | null || document.getElementById(`btn-open-connections-${officialCode}`);
+          if (btn) {
+            btn.onclick = (ev) => {
+              ev.preventDefault();
+              ev.stopPropagation();
+              const targetCode = btn.getAttribute('data-airport-code') || officialCode;
+              if (onOpenAirportConnections) onOpenAirportConnections(targetCode);
               marker.closePopup();
             };
           }
-          const btnAir = document.getElementById(`btn-open-airlines-${officialCode}`);
-          if (btnAir) {
-            btnAir.onclick = (e) => {
-              e.stopPropagation();
-              if (onOpenAirportConnections) onOpenAirportConnections(officialCode, 'airlines');
-              marker.closePopup();
-            };
+        });
+
+        // Click handlers: 1 click selects and opens popup; double-click opens full connections modal
+        marker.on('click', (e) => {
+          if (e.originalEvent) {
+            L.DomEvent.stopPropagation(e.originalEvent);
+          }
+          if (mapMode === 'routes_by_airline') {
+            setMode2SelectedAirport(officialCode);
+          } else if (mapMode === 'airports') {
+            if (onSelectAirport) onSelectAirport(officialCode);
+          }
+          marker.openPopup();
+        });
+
+        marker.on('dblclick', (e) => {
+          if (e.originalEvent) {
+            L.DomEvent.stopPropagation(e.originalEvent);
+            L.DomEvent.preventDefault(e.originalEvent);
+          }
+          if (onOpenAirportConnections) {
+            onOpenAirportConnections(officialCode);
           }
         });
 
@@ -1502,7 +1415,6 @@ export const FlightMap: React.FC<FlightMapProps> = ({
     }
   }, [
     routes,
-    allRoutes,
     airports,
     mapMode,
     selectedAirportCode,
@@ -1511,6 +1423,9 @@ export const FlightMap: React.FC<FlightMapProps> = ({
     arcCurvature,
     colorScheme,
     showAirportLabels,
+    activeShowAirportLabels,
+    iataFontSize,
+    activeIataFontSize,
     showFlightArcs,
     showAirports,
     animateFlow,
@@ -1526,11 +1441,10 @@ export const FlightMap: React.FC<FlightMapProps> = ({
     mode2ShowConnectedLabels,
     mode2ConnectedAirportCodes,
     mode1AnalysisMode,
-    mode1SelectedAirline,
-    showIataLabels,
-    iataLabelSize,
-    airportColorOverride,
-    selectedAirlines,
+    onOpenAirportConnections,
+    onSelectAirport,
+    isComparePane,
+    compareAirlineColor,
   ]);
 
   // Unique airlines for legend
@@ -1553,24 +1467,7 @@ export const FlightMap: React.FC<FlightMapProps> = ({
   const handleQuickCapturePNG = async () => {
     try {
       setIsCapturing(true);
-      const modeLabel =
-        mapMode === 'airports'
-          ? (selectedAirportCode ? `Modo 1: Conexiones Radiales desde ${selectedAirportCode}` : 'Modo 1: Aeropuertos y Hubs')
-          : mapMode === 'routes_by_airline'
-          ? 'Modo 2: Rutas Autorizadas por Aerolínea'
-          : 'Modo 3: Rutas Únicas y Operador Exclusivo';
-
-      await exportMapToImage(
-        id,
-        `observatorio_afac_${mapMode}_${Date.now()}.png`,
-        routes,
-        airports,
-        customAirlineColors,
-        {
-          modeName: modeLabel,
-          legendContainer: legendContainerRef.current,
-        }
-      );
+      await exportMapToImage(id, `mapa_rutas_mexico_${mapMode}_${Date.now()}.png`, routes, airports, customAirlineColors, mapMode);
       setCaptureSuccess(true);
       setTimeout(() => setCaptureSuccess(false), 2500);
     } catch (err: any) {
@@ -1636,6 +1533,103 @@ export const FlightMap: React.FC<FlightMapProps> = ({
             <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-amber-400 border border-slate-900 animate-ping" />
           )}
         </button>
+        {/* Quick IATA Claves button in floating toolbar */}
+        <div className="relative">
+          <button
+            id={`${id}-btn-quick-iata`}
+            type="button"
+            onClick={() => setShowIataPopover(!showIataPopover)}
+            title="Configurar etiquetas IATA (Con nombres / Sin nombres y tamaño)"
+            className={`p-2 rounded-lg transition flex items-center justify-center relative cursor-pointer ${
+              showIataPopover
+                ? 'bg-cyan-500 text-slate-950 font-bold'
+                : activeShowAirportLabels
+                ? 'hover:bg-slate-800 text-cyan-300'
+                : 'hover:bg-slate-800 text-slate-400'
+            }`}
+          >
+            <Tag className="w-4 h-4" />
+          </button>
+
+          {showIataPopover && (
+            <div className="absolute right-full top-0 mr-2 z-[500] bg-slate-900/95 backdrop-blur-md border border-slate-700 rounded-2xl p-3 shadow-2xl w-60 text-white animate-in fade-in zoom-in-95 duration-150">
+              <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
+                <span className="font-bold text-xs text-white flex items-center gap-1.5">
+                  <Tag className="w-3.5 h-3.5 text-cyan-400" />
+                  Claves IATA
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowIataPopover(false)}
+                  className="p-1 text-slate-400 hover:text-white rounded cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs mb-2.5">
+                <button
+                  type="button"
+                  onClick={() => handleToggleLabels(true)}
+                  className={`py-1.5 px-2 rounded-lg font-bold transition flex items-center justify-center cursor-pointer ${
+                    activeShowAirportLabels
+                      ? 'bg-cyan-500 text-slate-950 shadow-md ring-1 ring-cyan-400'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Con nombres
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleToggleLabels(false)}
+                  className={`py-1.5 px-2 rounded-lg font-bold transition flex items-center justify-center cursor-pointer ${
+                    !activeShowAirportLabels
+                      ? 'bg-cyan-500 text-slate-950 shadow-md ring-1 ring-cyan-400'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Sin nombres
+                </button>
+              </div>
+
+              {activeShowAirportLabels && (
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between text-[10px] text-slate-400 font-semibold">
+                    <span>Tamaño de la clave IATA:</span>
+                    <span className="text-cyan-300 font-mono font-bold">{activeIataFontSize}px</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={activeIataFontSize <= 8}
+                      onClick={() => handleChangeIataFontSize(Math.max(8, activeIataFontSize - 1))}
+                      className="px-2 py-0.5 bg-slate-950 border border-slate-700 hover:border-cyan-500 rounded text-xs font-bold text-slate-300 disabled:opacity-40 cursor-pointer"
+                    >
+                      A-
+                    </button>
+                    <input
+                      type="range"
+                      min={8}
+                      max={18}
+                      step={1}
+                      value={activeIataFontSize}
+                      onChange={(e) => handleChangeIataFontSize(Number(e.target.value))}
+                      className="flex-1 accent-cyan-500 cursor-pointer h-1.5 bg-slate-800 rounded-lg"
+                    />
+                    <button
+                      type="button"
+                      disabled={activeIataFontSize >= 18}
+                      onClick={() => handleChangeIataFontSize(Math.min(18, activeIataFontSize + 1))}
+                      className="px-2 py-0.5 bg-slate-950 border border-slate-700 hover:border-cyan-500 rounded text-xs font-bold text-slate-300 disabled:opacity-40 cursor-pointer"
+                    >
+                      A+
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
         <div className="h-px bg-slate-800 my-0.5" />
         <button
           id={`${id}-btn-quick-png`}
@@ -1652,64 +1646,6 @@ export const FlightMap: React.FC<FlightMapProps> = ({
             <Camera className="w-4 h-4" />
           )}
         </button>
-
-        {/* Separador */}
-        <div className="h-px bg-slate-800 my-0.5" />
-
-        {/* Botón de Clave IATA: Con nombres / Sin nombres (Visible en TODOS los modos de visualización) */}
-        <div className="flex flex-col items-center gap-1">
-          <button
-            id={`${id}-btn-toggle-iata`}
-            type="button"
-            onClick={() => {
-              const nextVal = !showIataLabels;
-              setShowIataLabels(nextVal);
-              setMode2ShowConnectedLabels(nextVal);
-              if (onToggleAirportLabels) onToggleAirportLabels(nextVal);
-            }}
-            title={
-              showIataLabels
-                ? 'Claves IATA: Con nombres (Clic para alternar a Sin nombres)'
-                : 'Claves IATA: Sin nombres (Clic para mostrar claves IATA en el mapa)'
-            }
-            className={`p-1.5 rounded-lg transition flex flex-col items-center justify-center relative cursor-pointer ${
-              showIataLabels
-                ? 'bg-cyan-950/80 text-cyan-300 border border-cyan-500/70 shadow-[0_0_10px_rgba(6,182,212,0.3)]'
-                : 'hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-transparent'
-            }`}
-          >
-            <Tag className="w-4 h-4" />
-            <span className="text-[7.5px] font-black tracking-tight uppercase font-mono mt-0.5">
-              {showIataLabels ? 'IATA' : 'OFF'}
-            </span>
-          </button>
-
-          {/* Ajustador de Tamaño de Clave IATA (P: 9px, M: 11px, G: 13px) */}
-          {showIataLabels && (
-            <div className="flex flex-col items-center gap-0.5 bg-slate-950/80 p-0.5 rounded-lg border border-slate-800/90 shadow-sm w-full">
-              {(['sm', 'md', 'lg'] as const).map((size) => {
-                const label = size === 'sm' ? 'P' : size === 'md' ? 'M' : 'G';
-                const pxLabel = size === 'sm' ? '9px' : size === 'md' ? '11px' : '13px';
-                const isActive = iataLabelSize === size;
-                return (
-                  <button
-                    key={size}
-                    type="button"
-                    onClick={() => onIataLabelSizeChange && onIataLabelSizeChange(size)}
-                    title={`Tamaño de clave IATA: ${label} (${pxLabel})`}
-                    className={`text-[8.5px] font-mono font-black py-0.5 px-1 rounded transition cursor-pointer text-center w-full ${
-                      isActive
-                        ? 'bg-cyan-500 text-slate-950 shadow-sm font-black'
-                        : 'text-slate-400 hover:text-cyan-300 hover:bg-slate-800/60'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
       </div>
 
       {/* Toast Alert for Mexico View Lock / Unlock */}
@@ -1730,8 +1666,8 @@ export const FlightMap: React.FC<FlightMapProps> = ({
         </div>
       )}
 
-      {/* Floating Colors Legend: Draggable & Resizable */}
-      {(mapMode === 'routes_by_airline' || mapMode === 'unique_routes') && (
+      {/* Floating Colors Legend: Draggable & Resizable for Modes 2 & 3 (Mode 1 controls reside cleanly in left sidebar) */}
+      {mapMode !== 'airports' && (
         <div
           ref={legendContainerRef}
           style={
@@ -1780,72 +1716,72 @@ export const FlightMap: React.FC<FlightMapProps> = ({
             </div>
           ) : (
             <div
-              className={`bg-slate-900/95 backdrop-blur-md border border-slate-700/90 rounded-xl shadow-2xl p-2.5 flex flex-col text-slate-100 overflow-hidden ${
+              className={`bg-slate-900/95 backdrop-blur-md border border-slate-700/90 rounded-2xl shadow-2xl p-3 flex flex-col text-slate-100 overflow-hidden ${
                 legendSize === 'compact'
-                  ? 'w-64 max-h-[82vh]'
+                  ? 'w-72 max-h-[82vh]'
                   : legendSize === 'large'
-                  ? 'w-80 max-h-[88vh]'
-                  : 'w-72 max-h-[85vh]'
+                  ? 'w-96 sm:w-[420px] max-h-[88vh]'
+                  : 'w-80 sm:w-84 max-h-[85vh]'
               }`}
             >
               {/* Top Drag & Control Bar */}
               <div
                 onMouseDown={handleDragMouseDown}
                 onTouchStart={handleDragTouchStart}
-                className="w-full flex items-center justify-between pb-1 mb-1 border-b border-slate-800 text-[10px] text-slate-400 cursor-grab active:cursor-grabbing hover:text-cyan-300 transition select-none group"
+                className="w-full flex items-center justify-between pb-1.5 mb-1.5 border-b border-slate-800 text-[10px] text-slate-400 cursor-grab active:cursor-grabbing hover:text-cyan-300 transition select-none group"
                 title="Haz clic y arrastra para mover y colocar esta pestaña en cualquier parte de la pantalla"
               >
                 <div className="flex items-center gap-1.5">
                   <GripHorizontal className="w-3.5 h-3.5 text-slate-400 group-hover:text-cyan-400 transition-colors" />
-                  <span className="font-semibold tracking-wide text-[9.5px]">Mover</span>
+                  <span className="font-semibold tracking-wide">Mover pestaña</span>
                 </div>
-                <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
                   {legendPos && (
                     <button
                       type="button"
                       onClick={handleResetLegendPosition}
                       title="Restablecer posición a esquina superior derecha"
-                      className="flex items-center gap-0.5 px-1 py-0.5 rounded text-[8.5px] text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+                      className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
                     >
-                      <RotateCcw className="w-2.5 h-2.5" />
+                      <RotateCcw className="w-3 h-3" />
                       <span>Restablecer</span>
                     </button>
                   )}
                   {/* Size Switcher Buttons: [P] [M] [G] */}
-                  <div className="flex items-center bg-slate-950 p-0.5 rounded border border-slate-800 text-[8.5px] font-mono">
+                  <div className="flex items-center bg-slate-950 p-0.5 rounded border border-slate-800 text-[9px] font-mono">
                     <button
                       type="button"
                       onClick={() => setLegendSize('compact')}
-                      className={`px-1 py-0.5 rounded font-bold transition cursor-pointer ${
+                      className={`px-1.5 py-0.5 rounded font-bold transition cursor-pointer ${
                         legendSize === 'compact'
                           ? 'bg-cyan-500 text-slate-950 shadow-sm'
                           : 'text-slate-400 hover:text-white'
                       }`}
-                      title="Compacto"
+                      title="Tamaño Pequeño / Compacto (reduce texto para visualizar todas las opciones sin desplazamiento)"
                     >
                       P
                     </button>
                     <button
                       type="button"
                       onClick={() => setLegendSize('normal')}
-                      className={`px-1 py-0.5 rounded font-bold transition cursor-pointer ${
+                      className={`px-1.5 py-0.5 rounded font-bold transition cursor-pointer ${
                         legendSize === 'normal'
                           ? 'bg-cyan-500 text-slate-950 shadow-sm'
                           : 'text-slate-400 hover:text-white'
                       }`}
-                      title="Mediano"
+                      title="Tamaño Mediano / Estándar"
                     >
                       M
                     </button>
                     <button
                       type="button"
                       onClick={() => setLegendSize('large')}
-                      className={`px-1 py-0.5 rounded font-bold transition cursor-pointer ${
+                      className={`px-1.5 py-0.5 rounded font-bold transition cursor-pointer ${
                         legendSize === 'large'
                           ? 'bg-cyan-500 text-slate-950 shadow-sm'
                           : 'text-slate-400 hover:text-white'
                       }`}
-                      title="Grande"
+                      title="Tamaño Grande / Amplio"
                     >
                       G
                     </button>
@@ -1854,7 +1790,7 @@ export const FlightMap: React.FC<FlightMapProps> = ({
                     id={`${id}-btn-collapse-legend`}
                     onClick={() => setIsRightLegendExpanded(false)}
                     title="Minimizar panel cromático"
-                    className="p-1 text-slate-400 hover:text-white rounded hover:bg-slate-800 transition cursor-pointer ml-0.5"
+                    className="p-1 text-slate-400 hover:text-white rounded hover:bg-slate-800 transition cursor-pointer ml-1"
                   >
                     <ChevronUp className="w-3.5 h-3.5" />
                   </button>
@@ -1862,36 +1798,43 @@ export const FlightMap: React.FC<FlightMapProps> = ({
               </div>
 
               {/* Title & Stats */}
-              <div className="flex items-center gap-1.5 pb-1 border-b border-slate-800 shrink-0">
+              <div className="flex items-center gap-2 pb-1.5 border-b border-slate-800 shrink-0">
                 <div className="p-1 rounded bg-cyan-500/20 text-cyan-300 shrink-0">
-                  {mapMode === 'unique_routes' ? <GitCommit className="w-3 h-3" /> : <Plane className="w-3 h-3" />}
+                  {mapMode === 'unique_routes' ? <GitCommit className="w-3.5 h-3.5" /> : <Plane className="w-3.5 h-3.5" />}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="font-bold text-white tracking-wide truncate text-[11px]">
+                  <div className={`font-black text-white tracking-wide truncate ${legendSize === 'compact' ? 'text-[11px]' : 'text-xs'}`}>
                     {mapMode === 'unique_routes'
-                      ? 'Rutas Únicas'
-                      : 'Atribución Cromática'}
+                      ? 'Nomenclatura de Tramos Únicos'
+                      : 'Atribución Cromática por Operador'}
                   </div>
-                  <div className="text-[8.5px] text-cyan-300 font-mono truncate">
+                  <div className="text-[9px] text-cyan-300 font-mono truncate">
                     {mapMode === 'unique_routes'
-                      ? `${uniqueCorridors.length} tramos únicos`
+                      ? `${uniqueCorridors.length} tramos únicos consolidados`
                       : `${routes.length} autorizaciones • ${mode2AirlinesCount.length} aerolíneas`}
                   </div>
                 </div>
+              </div>
+
+              {/* Subtitle / Description */}
+              <div className={`text-slate-400 mt-1.5 mb-1 leading-tight shrink-0 ${legendSize === 'compact' ? 'text-[9.5px]' : 'text-[10px]'}`}>
+                {mapMode === 'unique_routes'
+                  ? 'Identificación cromática por operador exclusivo y concurrencia de tramos.'
+                  : 'Correspondencia cromática y volumen de rutas autorizadas por aerolínea en México.'}
               </div>
 
               {/* ======================================================== */}
               {/* MODE 2 BODY: TODAS LAS RUTAS AUTORIZADAS (MODO ESTÁNDAR) */}
               {/* ======================================================== */}
               {mapMode === 'routes_by_airline' && (
-                <div className="flex-1 overflow-y-auto pt-1 flex flex-col min-h-0">
-                  <div className="flex items-center justify-between text-[9.5px] font-bold text-slate-400 uppercase tracking-wider pb-1 shrink-0">
+                <div className="flex-1 overflow-y-auto space-y-1.5 pr-1 pt-1">
+                  <div className="flex items-center justify-between text-[10px] font-bold text-slate-400 uppercase tracking-wider pb-0.5">
                     <span>Aerolíneas ({mode2AirlinesCount.length}):</span>
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1.5">
                       <button
                         type="button"
                         onClick={onSelectAllAirlines}
-                        className="text-[9.5px] text-cyan-400 hover:text-white underline cursor-pointer"
+                        className="text-[10px] text-cyan-400 hover:text-white underline cursor-pointer"
                         title="Marcar todas las aerolíneas"
                       >
                         Todas
@@ -1900,16 +1843,28 @@ export const FlightMap: React.FC<FlightMapProps> = ({
                       <button
                         type="button"
                         onClick={onDeselectAllAirlines}
-                        className="text-[9.5px] text-slate-400 hover:text-rose-400 underline cursor-pointer"
-                        title="Deseleccionar todas"
+                        className="text-[10px] text-slate-400 hover:text-rose-400 underline cursor-pointer"
+                        title="Deseleccionar todas para elegir con las casillas"
                       >
                         Ninguna
                       </button>
                     </div>
                   </div>
 
-                  {/* List of all airlines with compact rows so all fit completely */}
-                  <div className="space-y-0.5 overflow-y-auto pr-0.5 flex-1 min-h-0 custom-scrollbar">
+                  <div className={`text-cyan-300/90 bg-cyan-950/40 p-1.5 rounded-lg border border-cyan-800/50 leading-tight ${legendSize === 'compact' ? 'text-[9px]' : 'text-[10px]'}`}>
+                    ☑ <strong>Selección múltiple:</strong> Marca 2 o más aerolíneas para verlas simultáneamente con sus propios colores.
+                  </div>
+
+                  {/* List of all airlines with compact rows so all fit on screen */}
+                  <div
+                    className={`space-y-1 overflow-y-auto pr-0.5 ${
+                      legendSize === 'compact'
+                        ? 'max-h-[58vh]'
+                        : legendSize === 'large'
+                        ? 'max-h-[72vh]'
+                        : 'max-h-[64vh]'
+                    }`}
+                  >
                     {mode2AirlinesCount.map(([airline, count]) => {
                       const color = getAirlineColor(airline, customAirlineColors);
                       const isNoneSelected = selectedAirlines.includes('__NONE__');
@@ -1918,19 +1873,21 @@ export const FlightMap: React.FC<FlightMapProps> = ({
                         <div
                           key={airline}
                           onClick={() => onToggleAirline && onToggleAirline(airline)}
-                          className={`flex items-center justify-between rounded px-1.5 py-0.5 border transition cursor-pointer select-none ${
+                          className={`flex items-center justify-between rounded-lg border transition cursor-pointer select-none ${
+                            legendSize === 'compact' ? 'py-1 px-1.5' : legendSize === 'large' ? 'py-1.5 px-2.5' : 'py-1 px-2'
+                          } ${
                             isChecked
-                              ? 'bg-slate-950/80 border-cyan-500/50 shadow-sm'
-                              : 'bg-slate-950/30 border-slate-850 opacity-50 hover:opacity-85'
+                              ? 'bg-slate-950/90 border-cyan-500/60 shadow-sm'
+                              : 'bg-slate-950/40 border-slate-850 opacity-60 hover:opacity-90'
                           }`}
                         >
-                          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                          <div className="flex items-center gap-2 min-w-0 flex-1">
                             <label className="flex items-center cursor-pointer shrink-0" onClick={(e) => e.stopPropagation()}>
                               <input
                                 type="checkbox"
                                 checked={isChecked}
                                 onChange={() => onToggleAirline && onToggleAirline(airline)}
-                                className="w-3 h-3 rounded border-slate-600 bg-slate-900 text-cyan-500 focus:ring-cyan-500 cursor-pointer accent-cyan-500"
+                                className="w-3.5 h-3.5 rounded border-slate-600 bg-slate-900 text-cyan-500 focus:ring-cyan-500 cursor-pointer accent-cyan-500"
                                 title={isChecked ? `Desmarcar ${airline}` : `Marcar casilla de ${airline}`}
                               />
                             </label>
@@ -1940,16 +1897,18 @@ export const FlightMap: React.FC<FlightMapProps> = ({
                                 type="color"
                                 value={color}
                                 onChange={(e) => onUpdateAirlineColor && onUpdateAirlineColor(airline, e.target.value)}
-                                className="w-3.5 h-3.5 rounded-full border border-white/40 cursor-pointer p-0 bg-transparent opacity-0 absolute inset-0 z-10"
+                                className="w-4 h-4 rounded-full border border-white/40 cursor-pointer p-0 bg-transparent opacity-0 absolute inset-0 z-10"
                                 title={`Cambiar color asignado a ${airline}`}
                               />
                               <span
-                                className="w-2.5 h-2.5 rounded-full border border-white/70 shadow-sm"
+                                className="w-3 h-3 rounded-full border border-white/70 shadow-sm"
                                 style={{ backgroundColor: color }}
                               />
                             </div>
                             <span
-                              className="font-medium truncate hover:text-white text-[9.5px] text-slate-200"
+                              className={`font-medium truncate hover:text-white ${
+                                legendSize === 'compact' ? 'text-[10px]' : legendSize === 'large' ? 'text-xs' : 'text-[11px]'
+                              } text-slate-200`}
                               title={airline}
                             >
                               {airline}
@@ -1957,8 +1916,8 @@ export const FlightMap: React.FC<FlightMapProps> = ({
                           </div>
 
                           <div className="flex items-center gap-1 shrink-0 ml-1">
-                            <span className="font-mono text-[8.5px] font-bold text-cyan-300 bg-slate-900 px-1 py-0.2 rounded border border-slate-800">
-                              {count}
+                            <span className="font-mono text-[9px] font-bold text-cyan-300 bg-slate-900 px-1 py-0.5 rounded border border-slate-800">
+                              {count} {count === 1 ? 'ruta' : 'rutas'}
                             </span>
                           </div>
                         </div>
@@ -1966,9 +1925,9 @@ export const FlightMap: React.FC<FlightMapProps> = ({
                     })}
                   </div>
 
-                  <div className="pt-1 mt-1 border-t border-slate-800/80 text-[8.5px] text-slate-400 flex items-center justify-between shrink-0">
-                    <span>Total autorizaciones:</span>
-                    <span className="font-mono font-bold text-cyan-300">{routes.length}</span>
+                  <div className="p-1.5 rounded-lg bg-slate-950/60 border border-slate-800 text-[9.5px] text-slate-400 flex items-center justify-between">
+                    <span>Total de autorizaciones:</span>
+                    <span className="font-mono font-bold text-white">{routes.length}</span>
                   </div>
                 </div>
               )}
@@ -1977,132 +1936,152 @@ export const FlightMap: React.FC<FlightMapProps> = ({
               {/* MODE 3 BODY: RUTAS ÚNICAS */}
               {/* ======================================================== */}
               {mapMode === 'unique_routes' && (
-                <div className="flex-1 overflow-y-auto pt-1 flex flex-col min-h-0">
+                <>
                   {/* Mode 3 Active Indicator */}
-                  <div className="mb-1 flex items-center justify-between shrink-0 bg-slate-950 p-1.5 rounded-lg border border-slate-800">
-                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">
-                      Modalidad:
+                  <div className="my-1.5 flex items-center justify-between shrink-0 bg-slate-950 p-2 rounded-xl border border-slate-800">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                      Modalidad Activa:
                     </span>
-                    <span className="text-[9px] font-bold text-cyan-300 bg-slate-900 px-1.5 py-0.5 rounded border border-cyan-800">
+                    <span className="text-[10px] font-bold text-cyan-300 bg-slate-900 px-2 py-0.5 rounded border border-cyan-800">
                       {uniqueAnalysisMode === 'general' ? 'Análisis general' : 'Análisis específico'}
                     </span>
                   </div>
 
                   {/* Mode 3 Submode A: Análisis General */}
                   {uniqueAnalysisMode === 'general' ? (
-                    <div className="space-y-1.5 py-0.5 overflow-y-auto">
+                    <div className="space-y-2 py-1 overflow-y-auto">
+                      <div className="text-[10px] text-slate-400 leading-snug">
+                        En el <strong>Análisis general</strong> no se muestran aerolíneas individuales. Todos los 346 tramos consolidados se diferencian únicamente por si cuentan con 1 sola aerolínea autorizada o 2 o más:
+                      </div>
+
                       {/* Color 1: 1 sola aerolínea */}
-                      <div className="flex items-center justify-between p-1.5 rounded-lg bg-slate-950/80 border border-slate-800 hover:border-slate-700 transition">
-                        <div className="flex items-center gap-2">
+                      <div className="flex items-center justify-between p-2 rounded-xl bg-slate-950/80 border border-slate-800 hover:border-slate-700 transition">
+                        <div className="flex items-center gap-2.5">
                           <div className="relative flex items-center justify-center shrink-0">
                             <input
                               type="color"
                               value={uniqueSingleColor}
                               onChange={(e) => onChangeUniqueSingleColor && onChangeUniqueSingleColor(e.target.value)}
-                              className="w-5 h-5 rounded-full border border-white/40 cursor-pointer p-0 bg-transparent opacity-0 absolute inset-0 z-10"
+                              className="w-6 h-6 rounded-full border border-white/40 cursor-pointer p-0 bg-transparent opacity-0 absolute inset-0 z-10"
                               title="Click para cambiar color para 1 sola aerolínea"
                             />
                             <span
-                              className="w-3.5 h-3.5 rounded-full border border-white/70 shadow-sm"
+                              className="w-5 h-5 rounded-full border-2 border-white/70 shadow-sm"
                               style={{ backgroundColor: uniqueSingleColor }}
                             />
                           </div>
                           <div>
-                            <div className="text-[10px] font-bold text-white leading-tight">1 Sola Aerolínea</div>
-                            <div className="text-[8.5px] text-cyan-300">Operador exclusivo</div>
+                            <div className="text-xs font-bold text-white">1 Sola Aerolínea</div>
+                            <div className="text-[10px] text-cyan-300">Operador único exclusivo</div>
                           </div>
                         </div>
-                        <span className="font-mono text-[9px] font-bold text-cyan-400 bg-slate-900 px-1.5 py-0.5 rounded border border-slate-800">
+                        <span className="font-mono text-xs font-bold text-cyan-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
                           {singleCorridorsCount} rutas
                         </span>
                       </div>
 
                       {/* Color 2: 2 o más aerolíneas */}
-                      <div className="flex items-center justify-between p-1.5 rounded-lg bg-slate-950/80 border border-slate-800 hover:border-slate-700 transition">
+                      <div className="flex items-center justify-between p-2 rounded-xl bg-slate-950/80 border border-slate-800 hover:border-slate-700 transition">
+                        <div className="flex items-center gap-2.5">
+                          <div className="relative flex items-center justify-center shrink-0">
+                            <input
+                              type="color"
+                              value={uniqueMultiColor}
+                              onChange={(e) => onChangeUniqueMultiColor && onChangeUniqueMultiColor(e.target.value)}
+                              className="w-6 h-6 rounded-full border border-white/40 cursor-pointer p-0 bg-transparent opacity-0 absolute inset-0 z-10"
+                              title="Click para cambiar color para 2 o más aerolíneas"
+                            />
+                            <span
+                              className="w-5 h-5 rounded-full border-2 border-white/70 shadow-sm"
+                              style={{ backgroundColor: uniqueMultiColor }}
+                            />
+                          </div>
+                          <div>
+                            <div className="text-xs font-bold text-white">2 o Más Aerolíneas</div>
+                            <div className="text-[10px] text-amber-300">Ruta compartida / concurrente</div>
+                          </div>
+                        </div>
+                        <span className="font-mono text-xs font-bold text-amber-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
+                          {multiCorridorsCount} rutas
+                        </span>
+                      </div>
+
+                      <div className="p-2 rounded-lg bg-slate-950/60 border border-slate-800 text-[10px] text-slate-400 flex items-center justify-between">
+                        <span>Total de tramos consolidados:</span>
+                        <span className="font-mono font-bold text-white">{uniqueCorridors.length}</span>
+                      </div>
+                    </div>
+                  ) : (
+                    /* Mode 3 Submode B: Análisis Específico */
+                    <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+                      <div className="text-[10px] text-slate-400 leading-snug">
+                        En el <strong>Análisis específico</strong> se resalta a cada aerolínea con su propio color cuando es el único operador de la ruta, y se asigna un color compartido para 2 o más aerolíneas:
+                      </div>
+
+                      {/* Multi-carrier color option */}
+                      <div className="flex items-center justify-between p-2 rounded-xl bg-slate-950/80 border border-amber-500/50">
                         <div className="flex items-center gap-2">
                           <div className="relative flex items-center justify-center shrink-0">
                             <input
                               type="color"
                               value={uniqueMultiColor}
                               onChange={(e) => onChangeUniqueMultiColor && onChangeUniqueMultiColor(e.target.value)}
-                              className="w-5 h-5 rounded-full border border-white/40 cursor-pointer p-0 bg-transparent opacity-0 absolute inset-0 z-10"
-                              title="Click para cambiar color para 2 o más aerolíneas"
+                              className="w-6 h-6 rounded-full border border-white/40 cursor-pointer p-0 bg-transparent opacity-0 absolute inset-0 z-10"
+                              title="Cambiar color para rutas compartidas por 2 o más aerolíneas"
                             />
                             <span
-                              className="w-3.5 h-3.5 rounded-full border border-white/70 shadow-sm"
+                              className="w-4 h-4 rounded-full border border-white/70 shadow-sm"
                               style={{ backgroundColor: uniqueMultiColor }}
                             />
                           </div>
                           <div>
-                            <div className="text-[10px] font-bold text-white leading-tight">2 o Más Aerolíneas</div>
-                            <div className="text-[8.5px] text-amber-300">Ruta compartida</div>
+                            <div className="text-xs font-bold text-amber-300">2 o Más Aerolíneas</div>
+                            <div className="text-[10px] text-slate-400">Rutas compartidas</div>
                           </div>
                         </div>
-                        <span className="font-mono text-[9px] font-bold text-amber-400 bg-slate-900 px-1.5 py-0.5 rounded border border-slate-800">
+                        <span className="font-mono text-xs font-bold text-amber-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
                           {multiCorridorsCount} rutas
                         </span>
                       </div>
 
-                      <div className="p-1 rounded bg-slate-950/60 border border-slate-800 text-[8.5px] text-slate-400 flex items-center justify-between">
-                        <span>Total tramos:</span>
-                        <span className="font-mono font-bold text-white">{uniqueCorridors.length}</span>
-                      </div>
-                    </div>
-                  ) : (
-                    /* Mode 3 Submode B: Análisis Específico */
-                    <div className="flex-1 overflow-y-auto flex flex-col min-h-0 space-y-1">
-                      {/* Multi-carrier color option */}
-                      <div className="flex items-center justify-between p-1.5 rounded-lg bg-slate-950/80 border border-amber-500/50 shrink-0">
-                        <div className="flex items-center gap-1.5">
-                          <div className="relative flex items-center justify-center shrink-0">
-                            <input
-                              type="color"
-                              value={uniqueMultiColor}
-                              onChange={(e) => onChangeUniqueMultiColor && onChangeUniqueMultiColor(e.target.value)}
-                              className="w-4 h-4 rounded-full border border-white/40 cursor-pointer p-0 bg-transparent opacity-0 absolute inset-0 z-10"
-                              title="Cambiar color para rutas compartidas por 2 o más aerolíneas"
-                            />
-                            <span
-                              className="w-3 h-3 rounded-full border border-white/70 shadow-sm"
-                              style={{ backgroundColor: uniqueMultiColor }}
-                            />
-                          </div>
-                          <div>
-                            <div className="text-[9.5px] font-bold text-amber-300 leading-tight">2 o Más Aerolíneas</div>
-                            <div className="text-[8px] text-slate-400">Rutas compartidas</div>
-                          </div>
-                        </div>
-                        <span className="font-mono text-[8.5px] font-bold text-amber-400 bg-slate-900 px-1.5 py-0.2 rounded border border-slate-800">
-                          {multiCorridorsCount}
-                        </span>
-                      </div>
-
                       {/* Header for individual exclusive airlines */}
-                      <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider pt-0.5 flex items-center justify-between shrink-0">
-                        <span>Exclusivas ({exclusiveAirlinesCount.length}):</span>
-                        <div className="flex items-center gap-1">
+                      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pt-1 flex items-center justify-between">
+                        <span>Aerolíneas Autorizadas ({exclusiveAirlinesCount.length}):</span>
+                        <div className="flex items-center gap-1.5">
                           <button
                             type="button"
                             onClick={onSelectAllAirlines}
-                            className="text-[9px] text-cyan-400 hover:text-white underline cursor-pointer"
+                            className="text-[10px] text-cyan-400 hover:text-white underline cursor-pointer"
                             title="Marcar todas las aerolíneas"
                           >
-                            Todas
+                            Marcar todas
                           </button>
                           <span className="text-slate-600">|</span>
                           <button
                             type="button"
                             onClick={onDeselectAllAirlines}
-                            className="text-[9px] text-slate-400 hover:text-rose-400 underline cursor-pointer"
-                            title="Deseleccionar todas"
+                            className="text-[10px] text-slate-400 hover:text-rose-400 underline cursor-pointer"
+                            title="Deseleccionar todas para elegir 2 o más con las casillas"
                           >
-                            Ninguna
+                            Deseleccionar todas
                           </button>
                         </div>
                       </div>
 
+                      <div className="text-[10px] text-cyan-300/90 bg-cyan-950/40 p-2 rounded-xl border border-cyan-800/50 leading-tight">
+                        ☑ <strong>Selección múltiple con casillas:</strong> Marca 2 o más operadores exclusivos para compararlos simultáneamente.
+                      </div>
+
                       {/* Exclusive Airlines List with Checkboxes */}
-                      <div className="space-y-0.5 overflow-y-auto pr-0.5 flex-1 min-h-0 custom-scrollbar">
+                      <div
+                        className={`space-y-1 overflow-y-auto pr-0.5 ${
+                          legendSize === 'compact'
+                            ? 'max-h-[50vh]'
+                            : legendSize === 'large'
+                            ? 'max-h-[66vh]'
+                            : 'max-h-[58vh]'
+                        }`}
+                      >
                         {exclusiveAirlinesCount.map(([airline, count]) => {
                           const color = getAirlineColor(airline, customAirlineColors);
                           const isNoneSelected = selectedAirlines.includes('__NONE__');
@@ -2111,19 +2090,21 @@ export const FlightMap: React.FC<FlightMapProps> = ({
                             <div
                               key={airline}
                               onClick={() => onToggleAirline && onToggleAirline(airline)}
-                              className={`flex items-center justify-between rounded px-1.5 py-0.5 border transition cursor-pointer select-none ${
+                              className={`flex items-center justify-between rounded-lg border transition cursor-pointer select-none ${
+                                legendSize === 'compact' ? 'py-1 px-1.5' : legendSize === 'large' ? 'py-1.5 px-2.5' : 'py-1 px-2'
+                              } ${
                                 isChecked
-                                  ? 'bg-slate-950/80 border-cyan-500/50 shadow-sm'
-                                  : 'bg-slate-950/30 border-slate-850 opacity-50 hover:opacity-85'
+                                  ? 'bg-slate-950/90 border-cyan-500/60 shadow-sm'
+                                  : 'bg-slate-950/40 border-slate-850 opacity-60 hover:opacity-90'
                               }`}
                             >
-                              <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                              <div className="flex items-center gap-2 min-w-0 flex-1">
                                 <label className="flex items-center cursor-pointer shrink-0" onClick={(e) => e.stopPropagation()}>
                                   <input
                                     type="checkbox"
                                     checked={isChecked}
                                     onChange={() => onToggleAirline && onToggleAirline(airline)}
-                                    className="w-3 h-3 rounded border-slate-600 bg-slate-900 text-cyan-500 focus:ring-cyan-500 cursor-pointer accent-cyan-500"
+                                    className="w-3.5 h-3.5 rounded border-slate-600 bg-slate-900 text-cyan-500 focus:ring-cyan-500 cursor-pointer accent-cyan-500"
                                     title={isChecked ? `Desmarcar ${airline}` : `Marcar casilla de ${airline}`}
                                   />
                                 </label>
@@ -2133,16 +2114,18 @@ export const FlightMap: React.FC<FlightMapProps> = ({
                                     type="color"
                                     value={color}
                                     onChange={(e) => onUpdateAirlineColor && onUpdateAirlineColor(airline, e.target.value)}
-                                    className="w-3.5 h-3.5 rounded-full border border-white/40 cursor-pointer p-0 bg-transparent opacity-0 absolute inset-0 z-10"
+                                    className="w-4 h-4 rounded-full border border-white/40 cursor-pointer p-0 bg-transparent opacity-0 absolute inset-0 z-10"
                                     title={`Cambiar color de ${airline}`}
                                   />
                                   <span
-                                    className="w-2.5 h-2.5 rounded-full border border-white/70 shadow-sm"
+                                    className="w-3 h-3 rounded-full border border-white/70 shadow-sm"
                                     style={{ backgroundColor: color }}
                                   />
                                 </div>
                                 <span
-                                  className="font-medium truncate hover:text-white text-[9.5px] text-slate-200"
+                                  className={`font-medium truncate hover:text-white ${
+                                    legendSize === 'compact' ? 'text-[10px]' : legendSize === 'large' ? 'text-xs' : 'text-[11px]'
+                                  } text-slate-200`}
                                   title={airline}
                                 >
                                   {airline}
@@ -2150,8 +2133,8 @@ export const FlightMap: React.FC<FlightMapProps> = ({
                               </div>
 
                               <div className="flex items-center gap-1 shrink-0 ml-1">
-                                <span className="font-mono text-[8.5px] font-bold text-cyan-300 bg-slate-900 px-1 py-0.2 rounded border border-slate-800">
-                                  {count}
+                                <span className="font-mono text-[9px] font-bold text-cyan-300 bg-slate-900 px-1 py-0.5 rounded border border-slate-800">
+                                  {count} {count === 1 ? 'ruta' : 'rutas'}
                                 </span>
                               </div>
                             </div>
@@ -2159,15 +2142,15 @@ export const FlightMap: React.FC<FlightMapProps> = ({
                         })}
                       </div>
 
-                      <div className="pt-1 mt-1 border-t border-slate-800/80 text-[8.5px] text-slate-400 flex items-center justify-between shrink-0">
+                      <div className="p-2 rounded-lg bg-slate-950/60 border border-slate-800 text-[10px] text-slate-400 flex items-center justify-between">
                         <span>Tramos totales:</span>
-                        <span className="font-mono font-bold text-cyan-300">
-                          {singleCorridorsCount} excl. + {multiCorridorsCount} comp. = {uniqueCorridors.length}
+                        <span className="font-mono font-bold text-white">
+                          {singleCorridorsCount} exclusivas + {multiCorridorsCount} compartidas = {uniqueCorridors.length}
                         </span>
                       </div>
                     </div>
                   )}
-                </div>
+                </>
               )}
             </div>
           )}

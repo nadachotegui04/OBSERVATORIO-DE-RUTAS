@@ -72,25 +72,18 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           'Mapa A',
           'Mapa B',
           customAirlineColors,
-          { modeName: 'Comparativa Side-by-Side Dual GIS' }
+          activeMapMode
         );
       } else {
         // Single map export for chosen visualization mode
         const targetElement = document.getElementById('main-flight-map') ? 'main-flight-map' : mapElementId;
-        const modeLabel =
-          selectedExportScope === 'airports'
-            ? 'Modo 1: Aeropuertos y Hubs'
-            : selectedExportScope === 'unique_routes'
-            ? 'Modo 3: Rutas Únicas'
-            : 'Modo 2: Rutas Autorizadas por Aerolínea';
-
         await exportMapToImage(
           targetElement,
-          `observatorio_afac_${selectedExportScope}_${Date.now()}.png`,
+          `mapa_rutas_mexico_${selectedExportScope}_${Date.now()}.png`,
           routes,
           airports,
           customAirlineColors,
-          { modeName: modeLabel }
+          activeMapMode
         );
       }
 

@@ -1,8 +1,9 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { FlightRoute, Airport, FilterState, SavedMap, MapVisualizationMode } from '../types';
 import { FlightMap, getAirlineColor } from './FlightMap';
+import { AirportConnectionsModal } from './AirportConnectionsModal';
 import { extractUniqueAirports } from '../utils/dataParser';
-import { exportComparisonToImage, exportComparisonToStandaloneHtml } from '../utils/exporter';
+import { exportComparisonToImage, exportComparisonToStandaloneHtml, exportMapToImage } from '../utils/exporter';
 import {
   Link2,
   Unlink,
@@ -27,33 +28,56 @@ interface CompareViewProps {
   activeMapMode?: MapVisualizationMode;
   onMapModeChange?: (mode: MapVisualizationMode) => void;
   onUpdateAirlineColor?: (airline: string, color: string) => void;
-  topAirportsRankMap?: Map<string, number>;
+  showAirportLabels?: boolean;
+  onToggleAirportLabels?: (show: boolean) => void;
+  iataFontSize?: number;
+  onChangeIataFontSize?: (size: number) => void;
 }
 
 export const CompareView: React.FC<CompareViewProps> = ({
   allRoutes,
   customAirlineColors,
   activeMapMode = 'routes_by_airline',
-  currentMainFilters,
   onMapModeChange,
   onUpdateAirlineColor,
-  topAirportsRankMap,
+  showAirportLabels = true,
+  onToggleAirportLabels,
+  iataFontSize = 11,
+  onChangeIataFontSize,
 }) => {
-  // Sync state between both maps
-  const [syncMaps, setSyncMaps] = useState<boolean>(true);
-  const [sharedCenter, setSharedCenter] = useState<[number, number]>([23.6345, -102.5528]);
-  const [sharedZoom, setSharedZoom] = useState<number>(5);
+  // Sync state between both maps: default to FALSE for independent interaction
+  const [syncMaps, setSyncMaps] = useState<boolean>(false);
+  const [centerA, setCenterA] = useState<[number, number]>([23.6345, -102.5528]);
+  const [zoomA, setZoomA] = useState<number>(5);
+  const [centerB, setCenterB] = useState<[number, number]>([23.6345, -102.5528]);
+  const [zoomB, setZoomB] = useState<number>(5);
 
-  // Visualization mode for comparison (synced with parent or local)
+  // Visualization mode for comparison: strictly synced with parent activeMapMode
   const [compareMapMode, setCompareMapMode] = useState<MapVisualizationMode>(activeMapMode);
 
-  // Configuration for Map A (Left) - Airline selection only (no "guardado")
+  useEffect(() => {
+    if (activeMapMode) {
+      setCompareMapMode(activeMapMode);
+    }
+  }, [activeMapMode]);
+
+  // Configuration for Map A (Left) - Independent airline & airport selection
   const [selectedAirlineA, setSelectedAirlineA] = useState<string>('all');
+  const [selectedAirportA, setSelectedAirportA] = useState<string | null>(null);
   const [tileLayerA, setTileLayerA] = useState<'dark' | 'light' | 'osm' | 'satellite' | 'topo'>('dark');
 
-  // Configuration for Map B (Right) - Airline selection only (no "guardado")
+  // Configuration for Map B (Right) - Independent airline & airport selection
   const [selectedAirlineB, setSelectedAirlineB] = useState<string>('all');
+  const [selectedAirportB, setSelectedAirportB] = useState<string | null>(null);
   const [tileLayerB, setTileLayerB] = useState<'dark' | 'light' | 'osm' | 'satellite' | 'topo'>('dark');
+
+  // Airport Connections Detail Tab / Modal State
+  const [selectedAirportForConnections, setSelectedAirportForConnections] = useState<string | null>(null);
+  const [connectionsModalRoutes, setConnectionsModalRoutes] = useState<FlightRoute[]>(allRoutes);
+
+  // Individual Map export states
+  const [isExportingPngA, setIsExportingPngA] = useState<boolean>(false);
+  const [isExportingPngB, setIsExportingPngB] = useState<boolean>(false);
 
   // Export states
   const [isExportingPng, setIsExportingPng] = useState<boolean>(false);
@@ -122,10 +146,57 @@ export const CompareView: React.FC<CompareViewProps> = ({
   const routeDelta = statsB.count - statsA.count;
   const airportDelta = statsB.airports - statsA.airports;
 
-  const handleMapMove = (center: [number, number], zoom: number) => {
+  const handleMapMoveA = (center: [number, number], zoom: number) => {
+    setCenterA(center);
+    setZoomA(zoom);
     if (syncMaps) {
-      setSharedCenter(center);
-      setSharedZoom(zoom);
+      setCenterB(center);
+      setZoomB(zoom);
+    }
+  };
+
+  const handleMapMoveB = (center: [number, number], zoom: number) => {
+    setCenterB(center);
+    setZoomB(zoom);
+    if (syncMaps) {
+      setCenterA(center);
+      setZoomA(zoom);
+    }
+  };
+
+  const handleExportMapA = async () => {
+    try {
+      setIsExportingPngA(true);
+      await exportMapToImage(
+        'map-compare-a',
+        `mapa_A_${selectedAirlineA}_${Date.now()}.png`,
+        routesA,
+        airportsA,
+        customAirlineColors,
+        compareMapMode
+      );
+    } catch (err: any) {
+      console.error('Error exportando Mapa A:', err);
+    } finally {
+      setIsExportingPngA(false);
+    }
+  };
+
+  const handleExportMapB = async () => {
+    try {
+      setIsExportingPngB(true);
+      await exportMapToImage(
+        'map-compare-b',
+        `mapa_B_${selectedAirlineB}_${Date.now()}.png`,
+        routesB,
+        airportsB,
+        customAirlineColors,
+        compareMapMode
+      );
+    } catch (err: any) {
+      console.error('Error exportando Mapa B:', err);
+    } finally {
+      setIsExportingPngB(false);
     }
   };
 
@@ -133,13 +204,6 @@ export const CompareView: React.FC<CompareViewProps> = ({
   const handleExportComparisonPng = async () => {
     try {
       setIsExportingPng(true);
-      const modeLabel =
-        compareMapMode === 'airports'
-          ? 'Modo 1: Aeropuertos y Hubs'
-          : compareMapMode === 'routes_by_airline'
-          ? 'Modo 2: Rutas Autorizadas por Aerolínea'
-          : 'Modo 3: Rutas Únicas y Operador Exclusivo';
-
       await exportComparisonToImage(
         'compare-view-container',
         `comparativa_dual_${selectedAirlineA}_vs_${selectedAirlineB}_${Date.now()}.png`,
@@ -150,7 +214,7 @@ export const CompareView: React.FC<CompareViewProps> = ({
         selectedAirlineA === 'all' ? 'Todas las aerolíneas (A)' : selectedAirlineA,
         selectedAirlineB === 'all' ? 'Todas las aerolíneas (B)' : selectedAirlineB,
         customAirlineColors,
-        { modeName: modeLabel }
+        compareMapMode
       );
       setPngSuccess(true);
       setTimeout(() => setPngSuccess(false), 2500);
@@ -368,23 +432,37 @@ export const CompareView: React.FC<CompareViewProps> = ({
             </div>
 
             <div className="flex items-center gap-2 text-xs">
-              {/* Airline Selector ONLY (No 'guardado', no sheets) */}
+              {/* Airline Selector */}
               <div className="relative">
                 <select
                   id="select-compare-airline-a"
                   value={selectedAirlineA}
                   onChange={(e) => setSelectedAirlineA(e.target.value)}
-                  className="bg-slate-950 border border-cyan-500/70 text-slate-100 text-xs font-semibold rounded-lg px-2.5 py-1 focus:ring-2 focus:ring-cyan-400 focus:outline-none cursor-pointer max-w-[220px] truncate"
+                  className="bg-slate-950 border border-cyan-500/70 text-slate-100 text-xs font-semibold rounded-lg px-2.5 py-1 focus:ring-2 focus:ring-cyan-400 focus:outline-none cursor-pointer max-w-[170px] truncate"
                   title="Seleccionar aerolínea para visualizar sus rutas en el Mapa A"
                 >
-                  <option value="all">Todas las aerolíneas ({allRoutes.length} rutas)</option>
+                  <option value="all">Todas las aerolíneas ({allRoutes.length})</option>
                   {airlineStatsList.map(({ airline, count }) => (
                     <option key={`a-${airline}`} value={airline}>
-                      {airline} ({count} rutas)
+                      {airline} ({count})
                     </option>
                   ))}
                 </select>
               </div>
+
+              {compareMapMode === 'airports' && (
+                <select
+                  value={selectedAirportA || ''}
+                  onChange={(e) => setSelectedAirportA(e.target.value || null)}
+                  className="bg-slate-950 border border-cyan-500/70 text-slate-100 text-xs font-semibold rounded-lg px-2 py-1 max-w-[150px] truncate cursor-pointer"
+                  title="Seleccionar aeropuerto o hub para ver conexiones radiales en Mapa A"
+                >
+                  <option value="">Todos ({airportsA.length} aeropuertos)</option>
+                  {airportsA.map(a => (
+                    <option key={`sel-a-${a.code}`} value={a.code}>{a.code} - {a.name || a.city}</option>
+                  ))}
+                </select>
+              )}
 
               {selectedAirlineA !== 'all' && (
                 <button
@@ -407,6 +485,18 @@ export const CompareView: React.FC<CompareViewProps> = ({
                 <option value="satellite">Satélite</option>
                 <option value="topo">Terreno</option>
               </select>
+
+              <button
+                type="button"
+                id="btn-export-map-a-png"
+                onClick={handleExportMapA}
+                disabled={isExportingPngA}
+                title="Descargar captura PNG únicamente del Mapa A"
+                className="px-2 py-1 bg-slate-800 hover:bg-slate-750 text-cyan-300 hover:text-white rounded-lg text-xs font-bold border border-slate-700 transition flex items-center gap-1 cursor-pointer disabled:opacity-50"
+              >
+                {isExportingPngA ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Camera className="w-3.5 h-3.5" />}
+                <span className="hidden sm:inline">PNG A</span>
+              </button>
             </div>
           </div>
 
@@ -418,20 +508,29 @@ export const CompareView: React.FC<CompareViewProps> = ({
               allRoutes={allRoutes}
               airports={airportsA}
               mapMode={compareMapMode}
+              selectedAirportCode={selectedAirportA}
+              onSelectAirport={(code) => setSelectedAirportA(prev => prev === code ? null : code)}
+              onOpenAirportConnections={(code) => {
+                setSelectedAirportForConnections(code);
+                setConnectionsModalRoutes(routesA);
+              }}
               tileLayerKey={tileLayerA}
               customAirlineColors={customAirlineColors}
               selectedAirlines={selectedAirlineA === 'all' ? [] : [selectedAirlineA]}
-              airportColorOverride={
+              syncCenter={syncMaps ? centerA : null}
+              syncZoom={syncMaps ? zoomA : null}
+              onMapMove={handleMapMoveA}
+              onUpdateAirlineColor={onUpdateAirlineColor}
+              isComparePane={true}
+              compareAirlineColor={
                 selectedAirlineA === 'all'
                   ? '#06b6d4'
                   : getAirlineColor(selectedAirlineA, customAirlineColors)
               }
-              topAirportsRankMap={topAirportsRankMap}
-              selectedTopN={currentMainFilters?.selectedTopN || null}
-              syncCenter={syncMaps ? sharedCenter : null}
-              syncZoom={syncMaps ? sharedZoom : null}
-              onMapMove={handleMapMove}
-              onUpdateAirlineColor={onUpdateAirlineColor}
+              showAirportLabels={showAirportLabels}
+              onToggleAirportLabels={onToggleAirportLabels}
+              iataFontSize={iataFontSize}
+              onChangeIataFontSize={onChangeIataFontSize}
             />
 
             {/* Selected Airline floating KPI card on Map A */}
@@ -480,23 +579,37 @@ export const CompareView: React.FC<CompareViewProps> = ({
             </div>
 
             <div className="flex items-center gap-2 text-xs">
-              {/* Airline Selector ONLY (No 'guardado', no sheets) */}
+              {/* Airline Selector */}
               <div className="relative">
                 <select
                   id="select-compare-airline-b"
                   value={selectedAirlineB}
                   onChange={(e) => setSelectedAirlineB(e.target.value)}
-                  className="bg-slate-950 border border-purple-500/70 text-slate-100 text-xs font-semibold rounded-lg px-2.5 py-1 focus:ring-2 focus:ring-purple-400 focus:outline-none cursor-pointer max-w-[220px] truncate"
+                  className="bg-slate-950 border border-purple-500/70 text-slate-100 text-xs font-semibold rounded-lg px-2.5 py-1 focus:ring-2 focus:ring-purple-400 focus:outline-none cursor-pointer max-w-[170px] truncate"
                   title="Seleccionar aerolínea para visualizar sus rutas en el Mapa B"
                 >
-                  <option value="all">Todas las aerolíneas ({allRoutes.length} rutas)</option>
+                  <option value="all">Todas las aerolíneas ({allRoutes.length})</option>
                   {airlineStatsList.map(({ airline, count }) => (
                     <option key={`b-${airline}`} value={airline}>
-                      {airline} ({count} rutas)
+                      {airline} ({count})
                     </option>
                   ))}
                 </select>
               </div>
+
+              {compareMapMode === 'airports' && (
+                <select
+                  value={selectedAirportB || ''}
+                  onChange={(e) => setSelectedAirportB(e.target.value || null)}
+                  className="bg-slate-950 border border-purple-500/70 text-slate-100 text-xs font-semibold rounded-lg px-2 py-1 max-w-[150px] truncate cursor-pointer"
+                  title="Seleccionar aeropuerto o hub para ver conexiones radiales en Mapa B"
+                >
+                  <option value="">Todos ({airportsB.length} aeropuertos)</option>
+                  {airportsB.map(b => (
+                    <option key={`sel-b-${b.code}`} value={b.code}>{b.code} - {b.name || b.city}</option>
+                  ))}
+                </select>
+              )}
 
               {selectedAirlineB !== 'all' && (
                 <button
@@ -519,6 +632,18 @@ export const CompareView: React.FC<CompareViewProps> = ({
                 <option value="satellite">Satélite</option>
                 <option value="topo">Terreno</option>
               </select>
+
+              <button
+                type="button"
+                id="btn-export-map-b-png"
+                onClick={handleExportMapB}
+                disabled={isExportingPngB}
+                title="Descargar captura PNG únicamente del Mapa B"
+                className="px-2 py-1 bg-slate-800 hover:bg-slate-750 text-purple-300 hover:text-white rounded-lg text-xs font-bold border border-slate-700 transition flex items-center gap-1 cursor-pointer disabled:opacity-50"
+              >
+                {isExportingPngB ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Camera className="w-3.5 h-3.5" />}
+                <span className="hidden sm:inline">PNG B</span>
+              </button>
             </div>
           </div>
 
@@ -530,20 +655,29 @@ export const CompareView: React.FC<CompareViewProps> = ({
               allRoutes={allRoutes}
               airports={airportsB}
               mapMode={compareMapMode}
+              selectedAirportCode={selectedAirportB}
+              onSelectAirport={(code) => setSelectedAirportB(prev => prev === code ? null : code)}
+              onOpenAirportConnections={(code) => {
+                setSelectedAirportForConnections(code);
+                setConnectionsModalRoutes(routesB);
+              }}
               tileLayerKey={tileLayerB}
               customAirlineColors={customAirlineColors}
               selectedAirlines={selectedAirlineB === 'all' ? [] : [selectedAirlineB]}
-              airportColorOverride={
+              syncCenter={syncMaps ? centerB : null}
+              syncZoom={syncMaps ? zoomB : null}
+              onMapMove={handleMapMoveB}
+              onUpdateAirlineColor={onUpdateAirlineColor}
+              isComparePane={true}
+              compareAirlineColor={
                 selectedAirlineB === 'all'
-                  ? '#a855f7'
+                  ? '#c084fc'
                   : getAirlineColor(selectedAirlineB, customAirlineColors)
               }
-              topAirportsRankMap={topAirportsRankMap}
-              selectedTopN={currentMainFilters?.selectedTopN || null}
-              syncCenter={syncMaps ? sharedCenter : null}
-              syncZoom={syncMaps ? sharedZoom : null}
-              onMapMove={handleMapMove}
-              onUpdateAirlineColor={onUpdateAirlineColor}
+              showAirportLabels={showAirportLabels}
+              onToggleAirportLabels={onToggleAirportLabels}
+              iataFontSize={iataFontSize}
+              onChangeIataFontSize={onChangeIataFontSize}
             />
 
             {/* Selected Airline floating KPI card on Map B */}
@@ -570,6 +704,14 @@ export const CompareView: React.FC<CompareViewProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Airport Connections Detail Tab / Modal within Compare View */}
+      <AirportConnectionsModal
+        airportCode={selectedAirportForConnections}
+        routes={connectionsModalRoutes}
+        onClose={() => setSelectedAirportForConnections(null)}
+        getAirlineColor={(airline) => getAirlineColor(airline, customAirlineColors)}
+      />
     </div>
   );
 };

@@ -1141,72 +1141,68 @@ export function getUniqueRouteCorridors(routes: FlightRoute[]): UniqueRouteCorri
 }
 
 /**
- * Calculates all direct destination connections for an airport in Map Visualization Mode 1.
- * Supports bidirectional connections (origin or destination).
+ * Calculates all outgoing direct destination connections for an airport in Map Visualization Mode 1.
  */
 export function getAirportConnections(airportCode: string, routes: FlightRoute[]): AirportConnectionDetail[] {
   const destMap = new Map<string, AirportConnectionDetail>();
-  const code = (airportCode || '').trim().toUpperCase();
+  const codeNorm = (airportCode || '').trim().toUpperCase();
+  if (!codeNorm) return [];
 
-  routes
-    .filter(r => {
-      const orig = (r.originCode || '').trim().toUpperCase();
-      const dest = (r.destCode || '').trim().toUpperCase();
-      return orig === code || dest === code;
-    })
-    .forEach(route => {
-      const isOrig = (route.originCode || '').trim().toUpperCase() === code;
-      const targetCode = isOrig ? route.destCode : route.originCode;
-      const targetName = isOrig ? route.destName : route.originName;
-      const targetCity = isOrig ? route.destCity : route.originCity;
-      const targetState = isOrig ? route.destState : route.originState;
-      const targetLat = isOrig ? route.destLat : route.originLat;
-      const targetLng = isOrig ? route.destLng : route.originLng;
+  routes.forEach(route => {
+    const isOut = (route.originCode || '').trim().toUpperCase() === codeNorm;
+    const isIn = (route.destCode || '').trim().toUpperCase() === codeNorm;
+    if (!isOut && !isIn) return;
 
-      if (!destMap.has(targetCode)) {
-        destMap.set(targetCode, {
-          destCode: targetCode,
-          destName: targetName,
-          destCity: targetCity,
-          destState: targetState,
-          destLat: targetLat,
-          destLng: targetLng,
-          distanceKm: route.distanceKm,
-          distanceNm: route.distanceNm,
-          flightType: route.flightType,
-          airlines: [],
-          totalFlights: 0,
-          totalPassengers: 0,
-        });
+    const otherCode = isOut ? route.destCode : route.originCode;
+    const otherName = isOut ? route.destName : route.originName;
+    const otherCity = isOut ? route.destCity : route.originCity;
+    const otherState = isOut ? route.destState : route.originState;
+    const otherLat = isOut ? route.destLat : route.originLat;
+    const otherLng = isOut ? route.destLng : route.originLng;
+
+    if (!destMap.has(otherCode)) {
+      destMap.set(otherCode, {
+        destCode: otherCode,
+        destName: otherName,
+        destCity: otherCity,
+        destState: otherState,
+        destLat: otherLat,
+        destLng: otherLng,
+        distanceKm: route.distanceKm,
+        distanceNm: route.distanceNm,
+        flightType: route.flightType,
+        airlines: [],
+        totalFlights: 0,
+        totalPassengers: 0,
+      });
+    }
+
+    const detail = destMap.get(otherCode)!;
+    detail.totalFlights += (route.flightsCount || 1);
+    detail.totalPassengers += (route.passengers || 0);
+
+    const existingOp = detail.airlines.find(a => a.airline.toLowerCase() === route.airline.toLowerCase());
+    if (existingOp) {
+      existingOp.flightsCount += (route.flightsCount || 1);
+      existingOp.passengers += (route.passengers || 0);
+      if (!existingOp.authorizationDate && route.authorizationDate) {
+        existingOp.authorizationDate = route.authorizationDate;
       }
+    } else {
+      detail.airlines.push({
+        airline: route.airline,
+        authorizationDate: route.authorizationDate,
+        flightsCount: route.flightsCount || 1,
+        passengers: route.passengers || 0,
+        aircraft: route.aircraft,
+        flightNumber: route.flightNumber,
+        period: route.period,
+        year: route.year,
+        routeId: route.id,
+      });
+    }
+  });
 
-      const detail = destMap.get(targetCode)!;
-      detail.totalFlights += route.flightsCount;
-      detail.totalPassengers += route.passengers;
-
-      const cleanAirline = (route.airline || 'General').trim();
-      const existingOp = detail.airlines.find(a => a.airline.toLowerCase() === cleanAirline.toLowerCase());
-      if (existingOp) {
-        existingOp.flightsCount += route.flightsCount;
-        existingOp.passengers += route.passengers;
-        if (!existingOp.authorizationDate && route.authorizationDate) {
-          existingOp.authorizationDate = route.authorizationDate;
-        }
-      } else {
-        detail.airlines.push({
-          airline: cleanAirline,
-          authorizationDate: route.authorizationDate,
-          flightsCount: route.flightsCount,
-          passengers: route.passengers,
-          aircraft: route.aircraft,
-          flightNumber: route.flightNumber,
-          period: route.period,
-          year: route.year,
-          routeId: route.id,
-        });
-      }
-    });
-
-  return Array.from(destMap.values()).sort((a, b) => b.totalFlights - a.totalFlights || a.destName.localeCompare(b.destName));
+  return Array.from(destMap.values()).sort((a, b) => b.totalFlights - a.totalFlights || a.destCode.localeCompare(b.destCode));
 }
 
