@@ -1141,22 +1141,36 @@ export function getUniqueRouteCorridors(routes: FlightRoute[]): UniqueRouteCorri
 }
 
 /**
- * Calculates all outgoing direct destination connections for an airport in Map Visualization Mode 1.
+ * Calculates all direct destination connections for an airport in Map Visualization Mode 1.
+ * Supports bidirectional connections (origin or destination).
  */
 export function getAirportConnections(airportCode: string, routes: FlightRoute[]): AirportConnectionDetail[] {
   const destMap = new Map<string, AirportConnectionDetail>();
+  const code = (airportCode || '').trim().toUpperCase();
 
   routes
-    .filter(r => r.originCode === airportCode)
+    .filter(r => {
+      const orig = (r.originCode || '').trim().toUpperCase();
+      const dest = (r.destCode || '').trim().toUpperCase();
+      return orig === code || dest === code;
+    })
     .forEach(route => {
-      if (!destMap.has(route.destCode)) {
-        destMap.set(route.destCode, {
-          destCode: route.destCode,
-          destName: route.destName,
-          destCity: route.destCity,
-          destState: route.destState,
-          destLat: route.destLat,
-          destLng: route.destLng,
+      const isOrig = (route.originCode || '').trim().toUpperCase() === code;
+      const targetCode = isOrig ? route.destCode : route.originCode;
+      const targetName = isOrig ? route.destName : route.originName;
+      const targetCity = isOrig ? route.destCity : route.originCity;
+      const targetState = isOrig ? route.destState : route.originState;
+      const targetLat = isOrig ? route.destLat : route.originLat;
+      const targetLng = isOrig ? route.destLng : route.originLng;
+
+      if (!destMap.has(targetCode)) {
+        destMap.set(targetCode, {
+          destCode: targetCode,
+          destName: targetName,
+          destCity: targetCity,
+          destState: targetState,
+          destLat: targetLat,
+          destLng: targetLng,
           distanceKm: route.distanceKm,
           distanceNm: route.distanceNm,
           flightType: route.flightType,
@@ -1166,11 +1180,12 @@ export function getAirportConnections(airportCode: string, routes: FlightRoute[]
         });
       }
 
-      const detail = destMap.get(route.destCode)!;
+      const detail = destMap.get(targetCode)!;
       detail.totalFlights += route.flightsCount;
       detail.totalPassengers += route.passengers;
 
-      const existingOp = detail.airlines.find(a => a.airline.toLowerCase() === route.airline.toLowerCase());
+      const cleanAirline = (route.airline || 'General').trim();
+      const existingOp = detail.airlines.find(a => a.airline.toLowerCase() === cleanAirline.toLowerCase());
       if (existingOp) {
         existingOp.flightsCount += route.flightsCount;
         existingOp.passengers += route.passengers;
@@ -1179,7 +1194,7 @@ export function getAirportConnections(airportCode: string, routes: FlightRoute[]
         }
       } else {
         detail.airlines.push({
-          airline: route.airline,
+          airline: cleanAirline,
           authorizationDate: route.authorizationDate,
           flightsCount: route.flightsCount,
           passengers: route.passengers,
@@ -1192,6 +1207,6 @@ export function getAirportConnections(airportCode: string, routes: FlightRoute[]
       }
     });
 
-  return Array.from(destMap.values()).sort((a, b) => b.totalFlights - a.totalFlights);
+  return Array.from(destMap.values()).sort((a, b) => b.totalFlights - a.totalFlights || a.destName.localeCompare(b.destName));
 }
 

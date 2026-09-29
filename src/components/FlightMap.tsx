@@ -42,7 +42,7 @@ interface FlightMapProps {
   onMapModeChange?: (mode: MapVisualizationMode) => void;
   selectedAirportCode?: string | null;
   onSelectAirport?: (airportCode: string) => void;
-  onOpenAirportConnections?: (airportCode: string) => void;
+  onOpenAirportConnections?: (airportCode: string, initialTab?: 'destinations' | 'airlines') => void;
   tileLayerKey?: 'dark' | 'light' | 'osm' | 'satellite' | 'topo';
   arcCurvature?: number;
   colorScheme?: 'airline' | 'density' | 'cyan' | 'traffic';
@@ -73,6 +73,11 @@ interface FlightMapProps {
   onSelectAllAirlines?: () => void;
   onDeselectAllAirlines?: () => void;
   onUpdateAirlineColor?: (airline: string, color: string) => void;
+  mode1AnalysisMode?: 'standard' | 'specific';
+  onMode1AnalysisModeChange?: (mode: 'standard' | 'specific') => void;
+  mode1SelectedAirline?: string | null;
+  iataLabelSize?: 'sm' | 'md' | 'lg';
+  onIataLabelSizeChange?: (size: 'sm' | 'md' | 'lg') => void;
   className?: string;
 }
 
@@ -237,6 +242,11 @@ export const FlightMap: React.FC<FlightMapProps> = ({
   onSelectAllAirlines,
   onDeselectAllAirlines,
   onUpdateAirlineColor,
+  mode1AnalysisMode = 'standard',
+  onMode1AnalysisModeChange,
+  mode1SelectedAirline = null,
+  iataLabelSize = 'md',
+  onIataLabelSizeChange,
   className = '',
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -255,8 +265,6 @@ export const FlightMap: React.FC<FlightMapProps> = ({
 
   // Global IATA labels toggle ("Con nombres" vs "Sin nombres") across all modes (default: true)
   const [showIataLabels, setShowIataLabels] = useState<boolean>(showAirportLabels ?? true);
-  // IATA label font size adjuster: 'sm' (9px), 'md' (11px, default), 'lg' (13px)
-  const [iataLabelSize, setIataLabelSize] = useState<'sm' | 'md' | 'lg'>('md');
 
   // Keep in sync if showAirportLabels prop updates from parent
   useEffect(() => {
@@ -265,13 +273,34 @@ export const FlightMap: React.FC<FlightMapProps> = ({
     }
   }, [showAirportLabels]);
 
-  // Mode 1 (Aeropuertos y Hub) Análisis Específico toggle (derived from Mode 3)
-  const [mode1AnalysisMode, setMode1AnalysisMode] = useState<'standard' | 'specific'>('standard');
-
-  // Draggable Legend State & Resize
+  // Draggable Legend State & Resize (default to 'compact' for optimal fit)
   const [legendPos, setLegendPos] = useState<{ x: number; y: number } | null>(null);
   const [isDraggingLegend, setIsDraggingLegend] = useState<boolean>(false);
-  const [legendSize, setLegendSize] = useState<'compact' | 'normal' | 'large'>('normal');
+  const [legendSize, setLegendSize] = useState<'compact' | 'normal' | 'large'>(() => {
+    try {
+      const saved = localStorage.getItem('gis_mexico_legend_size');
+      if (saved === 'compact' || saved === 'normal' || saved === 'large') return saved;
+    } catch {}
+    return 'compact';
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('gis_mexico_legend_size', legendSize);
+    } catch {}
+  }, [legendSize]);
+
+  // Global window handler to guarantee popup button clicks always open the modal directly
+  useEffect(() => {
+    (window as any).__afacOpenAirportConnections = (code: string, tab?: 'destinations' | 'airlines') => {
+      if (onOpenAirportConnections) {
+        onOpenAirportConnections(code, tab || 'destinations');
+      }
+    };
+    return () => {
+      delete (window as any).__afacOpenAirportConnections;
+    };
+  }, [onOpenAirportConnections]);
   const legendContainerRef = useRef<HTMLDivElement>(null);
   const dragStartRef = useRef<{ startX: number; startY: number; posX: number; posY: number }>({
     startX: 0,
@@ -501,10 +530,13 @@ export const FlightMap: React.FC<FlightMapProps> = ({
   // Compute unique route corridors for Mode 3 (rendered on map)
   const uniqueCorridors: UniqueRouteCorridor[] = useMemo(() => {
     if (mapMode === 'unique_routes') {
+      if (selectedAirlines && selectedAirlines.includes('__NONE__')) {
+        return [];
+      }
       return getUniqueRouteCorridors(routes);
     }
     return [];
-  }, [routes, mapMode]);
+  }, [routes, mapMode, selectedAirlines]);
 
   // Base routes to ensure airlines in Mode 2 and Mode 3 right panels are never removed upon deselection
   const baseRoutesForAirlines = useMemo(() => {
@@ -540,6 +572,11 @@ export const FlightMap: React.FC<FlightMapProps> = ({
   // Mode 3: Exclusive airlines list that retains all airlines even when unselected
   const exclusiveAirlinesCount = useMemo(() => {
     const counts: Record<string, number> = {};
+    if (availableAirlines && availableAirlines.length > 0) {
+      availableAirlines.forEach(a => {
+        counts[a] = 0;
+      });
+    }
     baseUniqueCorridors.forEach(c => {
       if (c.airlines.length === 1) {
         const a = c.airlines[0].airline;
@@ -547,7 +584,7 @@ export const FlightMap: React.FC<FlightMapProps> = ({
       }
     });
     return Object.entries(counts).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-  }, [baseUniqueCorridors]);
+  }, [baseUniqueCorridors, availableAirlines]);
 
   // Mode 2: Airlines list that retains all airlines even when unselected
   const mode2AirlinesCount = useMemo(() => {
@@ -1132,6 +1169,7 @@ export const FlightMap: React.FC<FlightMapProps> = ({
         let radius = 7;
         let pinColor = '#06b6d4';
         let shadowGlow = '8px #06b6d4';
+        let isMode1Dimmed = false;
 
         if (isMode2) {
           if (isMode2Selected) {
@@ -1152,36 +1190,53 @@ export const FlightMap: React.FC<FlightMapProps> = ({
             shadowGlow = '8px #06b6d4';
           }
         } else if (isMode1) {
-          radius = isSelectedOrigin ? 10 : 8;
-          // In mode 1, use airportColorOverride if provided (e.g. from CompareView by airline)
-          if (airportColorOverride) {
+          if (mode1AnalysisMode === 'specific' && mode1SelectedAirline) {
+            const cleanAirline = mode1SelectedAirline.trim().toLowerCase();
+            const operatesAirline = (allRoutes || routes).some(
+              r => (r.originCode === officialCode || r.destCode === officialCode || r.originCode === airport.code || r.destCode === airport.code) &&
+                   r.airline && r.airline.trim().toLowerCase() === cleanAirline
+            );
+
+            if (operatesAirline) {
+              pinColor = getAirlineColor(mode1SelectedAirline, customAirlineColors);
+              radius = isSelectedOrigin ? 11 : 9.5;
+              shadowGlow = `14px ${pinColor}`;
+            } else {
+              pinColor = '#334155';
+              radius = 5.5;
+              shadowGlow = 'none';
+              isMode1Dimmed = true;
+            }
+          } else if (airportColorOverride) {
+            radius = isSelectedOrigin ? 10 : 8;
             pinColor = airportColorOverride;
-          } else if (selectedAirlines && selectedAirlines.length === 1) {
-            pinColor = getAirlineColor(selectedAirlines[0], customAirlineColors);
+            shadowGlow = `8px ${pinColor}`;
           } else {
+            radius = isSelectedOrigin ? 10 : 8;
             pinColor = '#06b6d4';
+            shadowGlow = `8px ${pinColor}`;
           }
-          shadowGlow = `8px ${pinColor}`;
         } else {
-          radius = isRanked ? (rankNum === 1 ? 11 : rankNum <= 4 ? 9 : 7.5) : isMajorHub ? 8.5 : 6;
-          pinColor = rankNum === 1 ? '#f59e0b' : isMajorHub ? '#38bdf8' : '#0ea5e9';
-          shadowGlow = rankNum === 1 ? '14px #f59e0b' : isMajorHub ? '12px #38bdf8' : '6px #0ea5e9';
+          radius = isRanked ? (rankNum <= 4 ? 9 : 7.5) : 7;
+          pinColor = '#06b6d4';
+          shadowGlow = '8px #06b6d4';
         }
 
-        const hasPulseRing = isSelectedOrigin || isMode2Selected || isMode2Connected || (!isMode1 && !isMode2 && (isMajorHub || isRanked));
+        const isMode1Active = isMode1 && mode1AnalysisMode === 'specific' && mode1SelectedAirline && !isMode1Dimmed;
+        const hasPulseRing = isSelectedOrigin || isMode2Selected || isMode2Connected || isMode1Active;
         const pulseBorder = isMode2Selected
           ? '2px solid rgba(16, 185, 129, 0.9)'
           : isMode2Connected
           ? '2px solid rgba(245, 158, 11, 0.9)'
           : isMode1
           ? `2px solid ${pinColor}`
-          : isSelectedOrigin
-          ? '2px solid rgba(16, 185, 129, 0.8)'
-          : '2px solid rgba(56, 189, 248, 0.7)';
+          : '2px solid rgba(6, 182, 212, 0.8)';
+
+        const isItemDimmed = isMode2Dimmed || isMode1Dimmed;
 
         const iconHtml = `
           <div class="airport-marker-hitbox flex items-center justify-center" style="width: 28px; height: 28px; cursor: pointer;">
-            <div class="airport-pin" style="width:${radius * 2}px; height:${radius * 2}px; background-color:${pinColor}; border: ${isMode2Dimmed ? '1px solid #64748b' : '2px solid #ffffff'}; box-shadow: 0 0 ${shadowGlow}; opacity: ${isMode2Dimmed ? 0.35 : 1};">
+            <div class="airport-pin" style="width:${radius * 2}px; height:${radius * 2}px; background-color:${pinColor}; border: ${isItemDimmed ? '1px solid #64748b' : '2px solid #ffffff'}; box-shadow: 0 0 ${shadowGlow}; opacity: ${isItemDimmed ? 0.35 : 1};">
               ${hasPulseRing ? `<div class="pulse-ring" style="border: ${pulseBorder};"></div>` : ''}
             </div>
           </div>
@@ -1231,8 +1286,13 @@ export const FlightMap: React.FC<FlightMapProps> = ({
           let badgeTextColor = '#67e8f9';
 
           if (isMode1) {
-            badgeBorderColor = pinColor;
-            badgeTextColor = (airportColorOverride || (selectedAirlines && selectedAirlines.length === 1)) ? '#ffffff' : '#67e8f9';
+            if (mode1AnalysisMode === 'specific' && mode1SelectedAirline) {
+              badgeBorderColor = isMode1Dimmed ? '#475569' : pinColor;
+              badgeTextColor = isMode1Dimmed ? '#94a3b8' : '#ffffff';
+            } else {
+              badgeBorderColor = pinColor;
+              badgeTextColor = (airportColorOverride || (selectedAirlines && selectedAirlines.length === 1)) ? '#ffffff' : '#67e8f9';
+            }
           } else if (isMode2) {
             if (isMode2Selected) {
               badgeBorderColor = '#10b981';
@@ -1248,8 +1308,8 @@ export const FlightMap: React.FC<FlightMapProps> = ({
               badgeTextColor = '#67e8f9';
             }
           } else if (mapMode === 'unique_routes') {
-            badgeBorderColor = isRanked && rankNum === 1 ? '#f59e0b' : 'rgba(6, 182, 212, 0.8)';
-            badgeTextColor = isRanked && rankNum === 1 ? '#fde68a' : '#67e8f9';
+            badgeBorderColor = 'rgba(6, 182, 212, 0.8)';
+            badgeTextColor = '#67e8f9';
           }
 
           const rankHtml = showRankInBadge
@@ -1292,8 +1352,8 @@ export const FlightMap: React.FC<FlightMapProps> = ({
         }
 
         // Click & Double-Click Handler for Airport Marker
-        // 1 click in Mode 2: Selects airport, highlights connected airports in amber, provides "con nombres" / "sin nombres"
-        // 2 clicks (double click): Directly opens "Ver destinos y conexiones directas" (onOpenAirportConnections)
+        // Single click: Opens summary popup across all modes (Mode 1, Mode 2, Mode 3)
+        // Double click: Directly opens comprehensive connections modal
         let airportMarkerClickTimer: any = null;
 
         marker.on('click', (e) => {
@@ -1305,30 +1365,14 @@ export const FlightMap: React.FC<FlightMapProps> = ({
             clearTimeout(airportMarkerClickTimer);
             airportMarkerClickTimer = null;
             if (onOpenAirportConnections) {
-              onOpenAirportConnections(officialCode);
+              onOpenAirportConnections(officialCode, 'destinations');
             }
           } else {
             airportMarkerClickTimer = setTimeout(() => {
               airportMarkerClickTimer = null;
-              // 1 clic (single click)
-              if (mapMode === 'routes_by_airline') {
-                if (mode2SelectedAirport === officialCode) {
-                  // Toggle off if clicking the already selected origin
-                  setMode2SelectedAirport(null);
-                } else {
-                  setMode2SelectedAirport(officialCode);
-                }
-              } else if (mapMode === 'airports') {
-                if (onSelectAirport) {
-                  // Toggle airport selection if already selected
-                  if (selectedAirportCode === officialCode) {
-                    onSelectAirport('');
-                  } else {
-                    onSelectAirport(officialCode);
-                  }
-                }
-              }
-            }, 260);
+              // Open standard summary popup stably across all modes without wiping layers
+              marker.openPopup();
+            }, 240);
           }
         });
 
@@ -1366,7 +1410,7 @@ export const FlightMap: React.FC<FlightMapProps> = ({
                 <span class="text-xs font-mono font-black text-cyan-300 bg-cyan-950/90 px-2.5 py-0.5 rounded border border-cyan-700">
                   ${officialCode}
                 </span>
-                ${isRanked ? `<span class="text-[9px] bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded uppercase font-bold tracking-wider">#${rankNum} TOP RUTAS</span>` : isMajorHub ? '<span class="text-[9px] bg-amber-500/20 text-amber-300 border border-amber-500/40 px-1.5 py-0.5 rounded uppercase font-bold tracking-wider">HUB PRINCIPAL</span>' : '<span class="text-[9px] text-slate-400 uppercase font-semibold">Aeropuerto Nacional</span>'}
+                ${isRanked ? `<span class="text-[9px] bg-cyan-950 text-cyan-300 border border-cyan-800 px-2 py-0.5 rounded uppercase font-bold tracking-wider">#${rankNum} TOP RUTAS</span>` : isMajorHub ? '<span class="text-[9px] bg-cyan-950 text-cyan-300 border border-cyan-800 px-1.5 py-0.5 rounded uppercase font-bold tracking-wider">HUB NACIONAL</span>' : '<span class="text-[9px] text-slate-400 uppercase font-semibold">Aeropuerto Nacional</span>'}
               </div>
               <div class="text-sm font-black text-white leading-snug">${officialName}</div>
               <div class="text-[11px] text-cyan-200/90 mt-0.5 font-medium">${officialCity}${officialState && officialState !== officialCity ? `, ${officialState}` : ''}</div>
@@ -1375,7 +1419,7 @@ export const FlightMap: React.FC<FlightMapProps> = ({
             <div class="grid grid-cols-2 gap-2 text-[11px] bg-slate-950 p-2 rounded-xl border border-slate-800 mb-2">
               <div>
                 <span class="text-slate-400 text-[10px] block font-medium">Rutas Asignadas:</span>
-                <span class="font-bold text-amber-400 font-mono text-xs">${airportMode2Routes.length > 0 ? airportMode2Routes.length : ((airport.outgoingRoutes || 0) + (airport.incomingRoutes || 0))} ruta${(airportMode2Routes.length || (airport.outgoingRoutes || 0) + (airport.incomingRoutes || 0)) === 1 ? '' : 's'}</span>
+                <span class="font-bold text-cyan-300 font-mono text-xs">${airportMode2Routes.length > 0 ? airportMode2Routes.length : ((airport.outgoingRoutes || 0) + (airport.incomingRoutes || 0))} ruta${(airportMode2Routes.length || (airport.outgoingRoutes || 0) + (airport.incomingRoutes || 0)) === 1 ? '' : 's'}</span>
               </div>
               <div>
                 <span class="text-slate-400 text-[10px] block font-medium">Aerolíneas Autorizadas:</span>
@@ -1403,37 +1447,62 @@ export const FlightMap: React.FC<FlightMapProps> = ({
               </div>
             ` : ''}
 
-            <button 
-              id="btn-open-connections-${officialCode}"
-              class="w-full py-1.5 px-3 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-md mt-1"
-            >
-              <span>Ver Destinos y Conexiones Directas</span>
-            </button>
+            <div class="grid grid-cols-2 gap-1.5 mt-2 pt-2 border-t border-slate-800">
+              <button 
+                id="btn-open-connections-${officialCode}"
+                type="button"
+                onclick="event.stopPropagation(); window.__afacOpenAirportConnections && window.__afacOpenAirportConnections('${officialCode}', 'destinations');"
+                class="py-1.5 px-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-[10.5px] font-bold transition flex items-center justify-center gap-1 cursor-pointer shadow-sm"
+                title="Ver lista de destinos y conexiones directas"
+              >
+                <span>Destinos Directos</span>
+              </button>
+              <button 
+                id="btn-open-airlines-${officialCode}"
+                type="button"
+                onclick="event.stopPropagation(); window.__afacOpenAirportConnections && window.__afacOpenAirportConnections('${officialCode}', 'airlines');"
+                class="py-1.5 px-2 bg-emerald-700 hover:bg-emerald-600 text-white border border-emerald-500/60 rounded-lg text-[10.5px] font-bold transition flex items-center justify-center gap-1 cursor-pointer shadow-sm"
+                title="Ver todas las aerolíneas con fecha de autorización y total de autorizaciones"
+              >
+                <span>Aerolíneas y Fechas</span>
+              </button>
+            </div>
           </div>
         `;
 
-        // In Mode 2 (routes_by_airline), do not bind standard popup:
-        // 1 click highlights connected routes and airports with casillas 'con nombres'/'sin nombres'
-        // 2 clicks directly opens the comprehensive 'Ver destinos y conexiones directas' modal
-        if (mapMode !== 'routes_by_airline') {
-          marker.bindPopup(airportPopupHtml);
+        // Standard popup across all modes (Mode 1, Mode 2, Mode 3):
+        // Shows official code, name, assigned routes count, operating airlines, and button to open full connections modal
+        marker.bindPopup(airportPopupHtml, {
+          closeButton: true,
+          autoPan: true,
+          className: 'custom-airport-popup',
+        });
 
-          marker.on('popupopen', () => {
-            const btn = document.getElementById(`btn-open-connections-${officialCode}`);
-            if (btn) {
-              btn.onclick = () => {
-                if (onOpenAirportConnections) onOpenAirportConnections(officialCode);
-                marker.closePopup();
-              };
-            }
-          });
-        }
+        marker.on('popupopen', () => {
+          const btnConn = document.getElementById(`btn-open-connections-${officialCode}`);
+          if (btnConn) {
+            btnConn.onclick = (e) => {
+              e.stopPropagation();
+              if (onOpenAirportConnections) onOpenAirportConnections(officialCode, 'destinations');
+              marker.closePopup();
+            };
+          }
+          const btnAir = document.getElementById(`btn-open-airlines-${officialCode}`);
+          if (btnAir) {
+            btnAir.onclick = (e) => {
+              e.stopPropagation();
+              if (onOpenAirportConnections) onOpenAirportConnections(officialCode, 'airlines');
+              marker.closePopup();
+            };
+          }
+        });
 
         airportsLayerGroupRef.current?.addLayer(marker);
       });
     }
   }, [
     routes,
+    allRoutes,
     airports,
     mapMode,
     selectedAirportCode,
@@ -1457,6 +1526,7 @@ export const FlightMap: React.FC<FlightMapProps> = ({
     mode2ShowConnectedLabels,
     mode2ConnectedAirportCodes,
     mode1AnalysisMode,
+    mode1SelectedAirline,
     showIataLabels,
     iataLabelSize,
     airportColorOverride,
@@ -1625,7 +1695,7 @@ export const FlightMap: React.FC<FlightMapProps> = ({
                   <button
                     key={size}
                     type="button"
-                    onClick={() => setIataLabelSize(size)}
+                    onClick={() => onIataLabelSizeChange && onIataLabelSizeChange(size)}
                     title={`Tamaño de clave IATA: ${label} (${pxLabel})`}
                     className={`text-[8.5px] font-mono font-black py-0.5 px-1 rounded transition cursor-pointer text-center w-full ${
                       isActive
@@ -1657,271 +1727,6 @@ export const FlightMap: React.FC<FlightMapProps> = ({
           >
             <X className="w-3.5 h-3.5" />
           </button>
-        </div>
-      )}
-
-      {/* Mode 1 (Aeropuertos y Hub): Modalidad de Análisis Específico al seleccionar aeropuerto(s) */}
-      {mapMode === 'airports' && selectedAirportCode && (
-        <div className="absolute top-16 left-4 z-[400] bg-slate-900/95 backdrop-blur-md border border-cyan-500/80 rounded-2xl p-3.5 shadow-2xl w-80 sm:w-96 text-white animate-in fade-in slide-in-from-top-2 duration-200">
-          <div className="flex items-start justify-between gap-2.5 pb-2.5 border-b border-slate-700/80">
-            <div className="min-w-0">
-              <div className="flex items-center gap-1.5 mb-1">
-                <span className="font-mono font-black text-xs text-cyan-300 bg-cyan-950 px-2 py-0.5 rounded border border-cyan-700">
-                  {selectedAirportCode}
-                </span>
-                <span className="text-[10px] text-cyan-400 font-bold uppercase tracking-wider bg-cyan-950/60 px-1.5 py-0.5 rounded border border-cyan-800">
-                  Aeropuerto Seleccionado
-                </span>
-              </div>
-              <h4 className="text-xs sm:text-sm font-black text-white leading-snug">
-                {selectedMode1AirportProfile?.name}
-              </h4>
-              {selectedMode1AirportProfile?.city && (
-                <p className="text-[11px] text-slate-300 mt-0.5">
-                  {selectedMode1AirportProfile.city}
-                  {selectedMode1AirportProfile.state && selectedMode1AirportProfile.state !== selectedMode1AirportProfile.city
-                    ? `, ${selectedMode1AirportProfile.state}`
-                    : ''}
-                </p>
-              )}
-            </div>
-            <button
-              type="button"
-              onClick={() => onSelectAirport && onSelectAirport('')}
-              className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition cursor-pointer shrink-0"
-              title="Quitar selección y ver todos los aeropuertos"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-
-          {/* Connections summary */}
-          <div className="grid grid-cols-2 gap-2 text-[11px] py-2 border-b border-slate-800">
-            <div className="bg-slate-950/70 p-1.5 rounded-lg border border-slate-800/80">
-              <span className="text-slate-400 text-[10px] block">Destinos Directos:</span>
-              <span className="font-bold text-cyan-300 font-mono text-xs">
-                {activeAirportConnections.length} aeropuertos
-              </span>
-            </div>
-            <div className="bg-slate-950/70 p-1.5 rounded-lg border border-slate-800/80">
-              <span className="text-slate-400 text-[10px] block">Rutas Radiales:</span>
-              <span className="font-bold text-amber-400 font-mono text-xs">
-                {activeAirportConnections.reduce((sum, c) => sum + c.totalFlights, 0).toLocaleString()} vuelos
-              </span>
-            </div>
-          </div>
-
-          {/* Modalidad de Análisis Toggle: Estándar vs Análisis Específico (Modo 3) */}
-          <div className="pt-2.5 pb-1 space-y-2">
-            <div className="flex items-center justify-between text-xs font-bold text-slate-200">
-              <div className="flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                <span>Modalidad de Análisis:</span>
-              </div>
-              <span className="text-[10px] text-amber-400 font-mono font-bold">
-                {mode1AnalysisMode === 'specific' ? 'Modo 3 Activo' : 'Estándar'}
-              </span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs">
-              <button
-                type="button"
-                onClick={() => setMode1AnalysisMode('standard')}
-                className={`py-1.5 px-2 rounded-lg font-semibold transition cursor-pointer text-center ${
-                  mode1AnalysisMode === 'standard'
-                    ? 'bg-cyan-600 text-white shadow-sm font-bold'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-                title="Vista estándar: todos los arcos en color cian uniforme"
-              >
-                Estándar
-              </button>
-              <button
-                type="button"
-                onClick={() => setMode1AnalysisMode('specific')}
-                className={`py-1.5 px-2 rounded-lg font-semibold transition cursor-pointer flex items-center justify-center gap-1 ${
-                  mode1AnalysisMode === 'specific'
-                    ? 'bg-amber-500 text-slate-950 shadow-sm font-bold'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-                title="Modalidad de Análisis Específico (Modo 3): Clasificación de rutas exclusivas vs compartidas"
-              >
-                <Sparkles className="w-3 h-3 shrink-0" />
-                <span>Análisis específico</span>
-              </button>
-            </div>
-
-            {/* Specific Analysis Mode Legend */}
-            {mode1AnalysisMode === 'specific' && (
-              <div className="bg-slate-950/80 border border-amber-500/60 rounded-xl p-2.5 text-[10.5px] space-y-1.5 animate-in fade-in duration-150">
-                <div className="font-bold text-amber-300 flex items-center justify-between pb-1 border-b border-slate-800">
-                  <span>Clasificación de Tramos (Modo 3):</span>
-                  <span className="text-[9px] font-mono text-slate-400">{activeAirportConnections.length} tramos</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span
-                    className="w-3 h-3 rounded-full border border-white/50 shrink-0"
-                    style={{ backgroundColor: uniqueMultiColor || '#f59e0b' }}
-                  ></span>
-                  <span className="text-slate-300">2 o más aerolíneas (Ruta compartida)</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="w-3 h-3 rounded-full border border-white/50 shrink-0 bg-cyan-400"></span>
-                  <span className="text-slate-300">1 sola aerolínea (Color asignado al operador)</span>
-                </div>
-              </div>
-            )}
-
-            {/* Actions */}
-            <div className="flex items-center gap-2 pt-1">
-              <button
-                type="button"
-                onClick={() => {
-                  if (onOpenAirportConnections) onOpenAirportConnections(selectedAirportCode);
-                }}
-                className="flex-1 py-1.5 px-3 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-md"
-              >
-                <Building2 className="w-3.5 h-3.5" />
-                <span>Ver destinos directos</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => onSelectAirport && onSelectAirport('')}
-                className="py-1.5 px-2.5 bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white rounded-xl text-xs font-medium transition cursor-pointer border border-slate-700"
-              >
-                Ver todos
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Mode 2 (Rutas Autorizadas): Banner flotante al dar 1 clic en un aeropuerto */}
-      {mapMode === 'routes_by_airline' && mode2SelectedAirport && selectedMode2AirportProfile && (
-        <div className="absolute top-16 left-4 z-[400] bg-slate-900/95 backdrop-blur-md border border-emerald-500/80 rounded-2xl p-3.5 shadow-2xl w-80 sm:w-96 text-white animate-in fade-in slide-in-from-top-2 duration-200">
-          <div className="flex items-start justify-between gap-2.5 pb-2.5 border-b border-slate-700/80">
-            <div className="min-w-0">
-              <div className="flex items-center gap-1.5 mb-1">
-                <span className="font-mono font-black text-xs text-emerald-300 bg-emerald-950 px-2 py-0.5 rounded border border-emerald-700">
-                  {mode2SelectedAirport}
-                </span>
-                <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-800">
-                  Aeropuerto Seleccionado
-                </span>
-              </div>
-              <h4 className="text-xs sm:text-sm font-black text-white leading-snug">
-                {selectedMode2AirportProfile.name}
-              </h4>
-              <p className="text-[11px] text-slate-300 mt-0.5">
-                {selectedMode2AirportProfile.city}
-                {selectedMode2AirportProfile.state && selectedMode2AirportProfile.state !== selectedMode2AirportProfile.city
-                  ? `, ${selectedMode2AirportProfile.state}`
-                  : ''}
-              </p>
-            </div>
-            <button
-              onClick={() => setMode2SelectedAirport(null)}
-              className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition cursor-pointer shrink-0"
-              title="Quitar selección y ver todos los aeropuertos"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-
-          {/* Connections summary */}
-          <div className="grid grid-cols-2 gap-2 text-[11px] py-2 border-b border-slate-800">
-            <div className="bg-slate-950/70 p-1.5 rounded-lg border border-slate-800/80">
-              <span className="text-slate-400 text-[10px] block">Aeropuertos con Conexión:</span>
-              <span className="font-bold text-amber-400 font-mono text-xs">
-                {mode2ConnectedAirportCodes.size} aeropuertos
-              </span>
-            </div>
-            <div className="bg-slate-950/70 p-1.5 rounded-lg border border-slate-800/80">
-              <span className="text-slate-400 text-[10px] block">Rutas Directas:</span>
-              <span className="font-bold text-cyan-300 font-mono text-xs">
-                {mode2ConnectedRoutes.length} rutas
-              </span>
-            </div>
-          </div>
-
-          {/* Casillas: Con Nombres vs Sin Nombres (las claves IATA reflejadas en el mapa) */}
-          <div className="pt-2.5 pb-1">
-            <div className="text-[10px] font-bold text-slate-300 uppercase tracking-wider mb-2 flex items-center justify-between">
-              <span>Etiquetas en el mapa de aeropuertos con conexión:</span>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <label
-                className={`flex items-center gap-2 p-2 rounded-xl border text-xs font-semibold cursor-pointer transition select-none ${
-                  showIataLabels
-                    ? 'bg-amber-950/60 border-amber-500/90 text-amber-200 shadow-md ring-1 ring-amber-500/40'
-                    : 'bg-slate-950/40 border-slate-800 text-slate-400 hover:border-slate-700'
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="mode2LabelToggle"
-                  checked={showIataLabels}
-                  onChange={() => {
-                    setShowIataLabels(true);
-                    setMode2ShowConnectedLabels(true);
-                  }}
-                  className="w-4 h-4 text-amber-500 accent-amber-500 cursor-pointer"
-                />
-                <div className="leading-tight">
-                  <span className="font-bold">Con nombres</span>
-                  <span className="block text-[9px] font-mono text-amber-300 font-normal">Claves IATA en mapa</span>
-                </div>
-              </label>
-
-              <label
-                className={`flex items-center gap-2 p-2 rounded-xl border text-xs font-semibold cursor-pointer transition select-none ${
-                  !showIataLabels
-                    ? 'bg-slate-800 border-cyan-500/90 text-cyan-200 shadow-md ring-1 ring-cyan-500/40'
-                    : 'bg-slate-950/40 border-slate-800 text-slate-400 hover:border-slate-700'
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="mode2LabelToggle"
-                  checked={!showIataLabels}
-                  onChange={() => {
-                    setShowIataLabels(false);
-                    setMode2ShowConnectedLabels(false);
-                  }}
-                  className="w-4 h-4 text-cyan-500 accent-cyan-500 cursor-pointer"
-                />
-                <div className="leading-tight">
-                  <span className="font-bold">Sin nombres</span>
-                  <span className="block text-[9px] text-slate-400 font-normal">Solo puntos resaltados</span>
-                </div>
-              </label>
-            </div>
-          </div>
-
-          {/* Action button: Ver Destinos y Conexiones Directas */}
-          <div className="pt-2 flex items-center gap-2">
-            <button
-              onClick={() => {
-                if (onOpenAirportConnections) onOpenAirportConnections(mode2SelectedAirport);
-              }}
-              className="flex-1 py-1.5 px-3 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-lg"
-            >
-              <Building2 className="w-3.5 h-3.5" />
-              <span>Ver destinos y conexiones directas</span>
-            </button>
-            <button
-              onClick={() => setMode2SelectedAirport(null)}
-              className="py-1.5 px-2.5 bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white rounded-xl text-xs font-medium transition cursor-pointer border border-slate-700"
-              title="Restablecer selección y ver todo el mapa"
-            >
-              Ver todos
-            </button>
-          </div>
-
-          <div className="text-[10px] text-slate-400 text-center mt-2 flex items-center justify-center gap-1">
-            <Sparkles className="w-3 h-3 text-amber-400 shrink-0" />
-            <span>Da 2 clics en cualquier punto de aeropuerto para abrir su información completa</span>
-          </div>
         </div>
       )}
 
@@ -1975,72 +1780,72 @@ export const FlightMap: React.FC<FlightMapProps> = ({
             </div>
           ) : (
             <div
-              className={`bg-slate-900/95 backdrop-blur-md border border-slate-700/90 rounded-2xl shadow-2xl p-3 flex flex-col text-slate-100 overflow-hidden ${
+              className={`bg-slate-900/95 backdrop-blur-md border border-slate-700/90 rounded-xl shadow-2xl p-2.5 flex flex-col text-slate-100 overflow-hidden ${
                 legendSize === 'compact'
-                  ? 'w-72 max-h-[82vh]'
+                  ? 'w-64 max-h-[82vh]'
                   : legendSize === 'large'
-                  ? 'w-96 sm:w-[420px] max-h-[88vh]'
-                  : 'w-80 sm:w-84 max-h-[85vh]'
+                  ? 'w-80 max-h-[88vh]'
+                  : 'w-72 max-h-[85vh]'
               }`}
             >
               {/* Top Drag & Control Bar */}
               <div
                 onMouseDown={handleDragMouseDown}
                 onTouchStart={handleDragTouchStart}
-                className="w-full flex items-center justify-between pb-1.5 mb-1.5 border-b border-slate-800 text-[10px] text-slate-400 cursor-grab active:cursor-grabbing hover:text-cyan-300 transition select-none group"
+                className="w-full flex items-center justify-between pb-1 mb-1 border-b border-slate-800 text-[10px] text-slate-400 cursor-grab active:cursor-grabbing hover:text-cyan-300 transition select-none group"
                 title="Haz clic y arrastra para mover y colocar esta pestaña en cualquier parte de la pantalla"
               >
                 <div className="flex items-center gap-1.5">
                   <GripHorizontal className="w-3.5 h-3.5 text-slate-400 group-hover:text-cyan-400 transition-colors" />
-                  <span className="font-semibold tracking-wide">Mover pestaña</span>
+                  <span className="font-semibold tracking-wide text-[9.5px]">Mover</span>
                 </div>
-                <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                   {legendPos && (
                     <button
                       type="button"
                       onClick={handleResetLegendPosition}
                       title="Restablecer posición a esquina superior derecha"
-                      className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+                      className="flex items-center gap-0.5 px-1 py-0.5 rounded text-[8.5px] text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
                     >
-                      <RotateCcw className="w-3 h-3" />
+                      <RotateCcw className="w-2.5 h-2.5" />
                       <span>Restablecer</span>
                     </button>
                   )}
                   {/* Size Switcher Buttons: [P] [M] [G] */}
-                  <div className="flex items-center bg-slate-950 p-0.5 rounded border border-slate-800 text-[9px] font-mono">
+                  <div className="flex items-center bg-slate-950 p-0.5 rounded border border-slate-800 text-[8.5px] font-mono">
                     <button
                       type="button"
                       onClick={() => setLegendSize('compact')}
-                      className={`px-1.5 py-0.5 rounded font-bold transition cursor-pointer ${
+                      className={`px-1 py-0.5 rounded font-bold transition cursor-pointer ${
                         legendSize === 'compact'
                           ? 'bg-cyan-500 text-slate-950 shadow-sm'
                           : 'text-slate-400 hover:text-white'
                       }`}
-                      title="Tamaño Pequeño / Compacto (reduce texto para visualizar todas las opciones sin desplazamiento)"
+                      title="Compacto"
                     >
                       P
                     </button>
                     <button
                       type="button"
                       onClick={() => setLegendSize('normal')}
-                      className={`px-1.5 py-0.5 rounded font-bold transition cursor-pointer ${
+                      className={`px-1 py-0.5 rounded font-bold transition cursor-pointer ${
                         legendSize === 'normal'
                           ? 'bg-cyan-500 text-slate-950 shadow-sm'
                           : 'text-slate-400 hover:text-white'
                       }`}
-                      title="Tamaño Mediano / Estándar"
+                      title="Mediano"
                     >
                       M
                     </button>
                     <button
                       type="button"
                       onClick={() => setLegendSize('large')}
-                      className={`px-1.5 py-0.5 rounded font-bold transition cursor-pointer ${
+                      className={`px-1 py-0.5 rounded font-bold transition cursor-pointer ${
                         legendSize === 'large'
                           ? 'bg-cyan-500 text-slate-950 shadow-sm'
                           : 'text-slate-400 hover:text-white'
                       }`}
-                      title="Tamaño Grande / Amplio"
+                      title="Grande"
                     >
                       G
                     </button>
@@ -2049,7 +1854,7 @@ export const FlightMap: React.FC<FlightMapProps> = ({
                     id={`${id}-btn-collapse-legend`}
                     onClick={() => setIsRightLegendExpanded(false)}
                     title="Minimizar panel cromático"
-                    className="p-1 text-slate-400 hover:text-white rounded hover:bg-slate-800 transition cursor-pointer ml-1"
+                    className="p-1 text-slate-400 hover:text-white rounded hover:bg-slate-800 transition cursor-pointer ml-0.5"
                   >
                     <ChevronUp className="w-3.5 h-3.5" />
                   </button>
@@ -2057,43 +1862,36 @@ export const FlightMap: React.FC<FlightMapProps> = ({
               </div>
 
               {/* Title & Stats */}
-              <div className="flex items-center gap-2 pb-1.5 border-b border-slate-800 shrink-0">
+              <div className="flex items-center gap-1.5 pb-1 border-b border-slate-800 shrink-0">
                 <div className="p-1 rounded bg-cyan-500/20 text-cyan-300 shrink-0">
-                  {mapMode === 'unique_routes' ? <GitCommit className="w-3.5 h-3.5" /> : <Plane className="w-3.5 h-3.5" />}
+                  {mapMode === 'unique_routes' ? <GitCommit className="w-3 h-3" /> : <Plane className="w-3 h-3" />}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className={`font-black text-white tracking-wide truncate ${legendSize === 'compact' ? 'text-[11px]' : 'text-xs'}`}>
+                  <div className="font-bold text-white tracking-wide truncate text-[11px]">
                     {mapMode === 'unique_routes'
-                      ? 'Nomenclatura de Tramos Únicos'
-                      : 'Atribución Cromática por Operador'}
+                      ? 'Rutas Únicas'
+                      : 'Atribución Cromática'}
                   </div>
-                  <div className="text-[9px] text-cyan-300 font-mono truncate">
+                  <div className="text-[8.5px] text-cyan-300 font-mono truncate">
                     {mapMode === 'unique_routes'
-                      ? `${uniqueCorridors.length} tramos únicos consolidados`
+                      ? `${uniqueCorridors.length} tramos únicos`
                       : `${routes.length} autorizaciones • ${mode2AirlinesCount.length} aerolíneas`}
                   </div>
                 </div>
-              </div>
-
-              {/* Subtitle / Description */}
-              <div className={`text-slate-400 mt-1.5 mb-1 leading-tight shrink-0 ${legendSize === 'compact' ? 'text-[9.5px]' : 'text-[10px]'}`}>
-                {mapMode === 'unique_routes'
-                  ? 'Identificación cromática por operador exclusivo y concurrencia de tramos.'
-                  : 'Correspondencia cromática y volumen de rutas autorizadas por aerolínea en México.'}
               </div>
 
               {/* ======================================================== */}
               {/* MODE 2 BODY: TODAS LAS RUTAS AUTORIZADAS (MODO ESTÁNDAR) */}
               {/* ======================================================== */}
               {mapMode === 'routes_by_airline' && (
-                <div className="flex-1 overflow-y-auto space-y-1.5 pr-1 pt-1">
-                  <div className="flex items-center justify-between text-[10px] font-bold text-slate-400 uppercase tracking-wider pb-0.5">
+                <div className="flex-1 overflow-y-auto pt-1 flex flex-col min-h-0">
+                  <div className="flex items-center justify-between text-[9.5px] font-bold text-slate-400 uppercase tracking-wider pb-1 shrink-0">
                     <span>Aerolíneas ({mode2AirlinesCount.length}):</span>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1">
                       <button
                         type="button"
                         onClick={onSelectAllAirlines}
-                        className="text-[10px] text-cyan-400 hover:text-white underline cursor-pointer"
+                        className="text-[9.5px] text-cyan-400 hover:text-white underline cursor-pointer"
                         title="Marcar todas las aerolíneas"
                       >
                         Todas
@@ -2102,28 +1900,16 @@ export const FlightMap: React.FC<FlightMapProps> = ({
                       <button
                         type="button"
                         onClick={onDeselectAllAirlines}
-                        className="text-[10px] text-slate-400 hover:text-rose-400 underline cursor-pointer"
-                        title="Deseleccionar todas para elegir con las casillas"
+                        className="text-[9.5px] text-slate-400 hover:text-rose-400 underline cursor-pointer"
+                        title="Deseleccionar todas"
                       >
                         Ninguna
                       </button>
                     </div>
                   </div>
 
-                  <div className={`text-cyan-300/90 bg-cyan-950/40 p-1.5 rounded-lg border border-cyan-800/50 leading-tight ${legendSize === 'compact' ? 'text-[9px]' : 'text-[10px]'}`}>
-                    ☑ <strong>Selección múltiple:</strong> Marca 2 o más aerolíneas para verlas simultáneamente con sus propios colores.
-                  </div>
-
-                  {/* List of all airlines with compact rows so all fit on screen */}
-                  <div
-                    className={`space-y-1 overflow-y-auto pr-0.5 ${
-                      legendSize === 'compact'
-                        ? 'max-h-[58vh]'
-                        : legendSize === 'large'
-                        ? 'max-h-[72vh]'
-                        : 'max-h-[64vh]'
-                    }`}
-                  >
+                  {/* List of all airlines with compact rows so all fit completely */}
+                  <div className="space-y-0.5 overflow-y-auto pr-0.5 flex-1 min-h-0 custom-scrollbar">
                     {mode2AirlinesCount.map(([airline, count]) => {
                       const color = getAirlineColor(airline, customAirlineColors);
                       const isNoneSelected = selectedAirlines.includes('__NONE__');
@@ -2132,21 +1918,19 @@ export const FlightMap: React.FC<FlightMapProps> = ({
                         <div
                           key={airline}
                           onClick={() => onToggleAirline && onToggleAirline(airline)}
-                          className={`flex items-center justify-between rounded-lg border transition cursor-pointer select-none ${
-                            legendSize === 'compact' ? 'py-1 px-1.5' : legendSize === 'large' ? 'py-1.5 px-2.5' : 'py-1 px-2'
-                          } ${
+                          className={`flex items-center justify-between rounded px-1.5 py-0.5 border transition cursor-pointer select-none ${
                             isChecked
-                              ? 'bg-slate-950/90 border-cyan-500/60 shadow-sm'
-                              : 'bg-slate-950/40 border-slate-850 opacity-60 hover:opacity-90'
+                              ? 'bg-slate-950/80 border-cyan-500/50 shadow-sm'
+                              : 'bg-slate-950/30 border-slate-850 opacity-50 hover:opacity-85'
                           }`}
                         >
-                          <div className="flex items-center gap-2 min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 min-w-0 flex-1">
                             <label className="flex items-center cursor-pointer shrink-0" onClick={(e) => e.stopPropagation()}>
                               <input
                                 type="checkbox"
                                 checked={isChecked}
                                 onChange={() => onToggleAirline && onToggleAirline(airline)}
-                                className="w-3.5 h-3.5 rounded border-slate-600 bg-slate-900 text-cyan-500 focus:ring-cyan-500 cursor-pointer accent-cyan-500"
+                                className="w-3 h-3 rounded border-slate-600 bg-slate-900 text-cyan-500 focus:ring-cyan-500 cursor-pointer accent-cyan-500"
                                 title={isChecked ? `Desmarcar ${airline}` : `Marcar casilla de ${airline}`}
                               />
                             </label>
@@ -2156,18 +1940,16 @@ export const FlightMap: React.FC<FlightMapProps> = ({
                                 type="color"
                                 value={color}
                                 onChange={(e) => onUpdateAirlineColor && onUpdateAirlineColor(airline, e.target.value)}
-                                className="w-4 h-4 rounded-full border border-white/40 cursor-pointer p-0 bg-transparent opacity-0 absolute inset-0 z-10"
+                                className="w-3.5 h-3.5 rounded-full border border-white/40 cursor-pointer p-0 bg-transparent opacity-0 absolute inset-0 z-10"
                                 title={`Cambiar color asignado a ${airline}`}
                               />
                               <span
-                                className="w-3 h-3 rounded-full border border-white/70 shadow-sm"
+                                className="w-2.5 h-2.5 rounded-full border border-white/70 shadow-sm"
                                 style={{ backgroundColor: color }}
                               />
                             </div>
                             <span
-                              className={`font-medium truncate hover:text-white ${
-                                legendSize === 'compact' ? 'text-[10px]' : legendSize === 'large' ? 'text-xs' : 'text-[11px]'
-                              } text-slate-200`}
+                              className="font-medium truncate hover:text-white text-[9.5px] text-slate-200"
                               title={airline}
                             >
                               {airline}
@@ -2175,8 +1957,8 @@ export const FlightMap: React.FC<FlightMapProps> = ({
                           </div>
 
                           <div className="flex items-center gap-1 shrink-0 ml-1">
-                            <span className="font-mono text-[9px] font-bold text-cyan-300 bg-slate-900 px-1 py-0.5 rounded border border-slate-800">
-                              {count} {count === 1 ? 'ruta' : 'rutas'}
+                            <span className="font-mono text-[8.5px] font-bold text-cyan-300 bg-slate-900 px-1 py-0.2 rounded border border-slate-800">
+                              {count}
                             </span>
                           </div>
                         </div>
@@ -2184,9 +1966,9 @@ export const FlightMap: React.FC<FlightMapProps> = ({
                     })}
                   </div>
 
-                  <div className="p-1.5 rounded-lg bg-slate-950/60 border border-slate-800 text-[9.5px] text-slate-400 flex items-center justify-between">
-                    <span>Total de autorizaciones:</span>
-                    <span className="font-mono font-bold text-white">{routes.length}</span>
+                  <div className="pt-1 mt-1 border-t border-slate-800/80 text-[8.5px] text-slate-400 flex items-center justify-between shrink-0">
+                    <span>Total autorizaciones:</span>
+                    <span className="font-mono font-bold text-cyan-300">{routes.length}</span>
                   </div>
                 </div>
               )}
@@ -2195,152 +1977,132 @@ export const FlightMap: React.FC<FlightMapProps> = ({
               {/* MODE 3 BODY: RUTAS ÚNICAS */}
               {/* ======================================================== */}
               {mapMode === 'unique_routes' && (
-                <>
+                <div className="flex-1 overflow-y-auto pt-1 flex flex-col min-h-0">
                   {/* Mode 3 Active Indicator */}
-                  <div className="my-1.5 flex items-center justify-between shrink-0 bg-slate-950 p-2 rounded-xl border border-slate-800">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                      Modalidad Activa:
+                  <div className="mb-1 flex items-center justify-between shrink-0 bg-slate-950 p-1.5 rounded-lg border border-slate-800">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">
+                      Modalidad:
                     </span>
-                    <span className="text-[10px] font-bold text-cyan-300 bg-slate-900 px-2 py-0.5 rounded border border-cyan-800">
+                    <span className="text-[9px] font-bold text-cyan-300 bg-slate-900 px-1.5 py-0.5 rounded border border-cyan-800">
                       {uniqueAnalysisMode === 'general' ? 'Análisis general' : 'Análisis específico'}
                     </span>
                   </div>
 
                   {/* Mode 3 Submode A: Análisis General */}
                   {uniqueAnalysisMode === 'general' ? (
-                    <div className="space-y-2 py-1 overflow-y-auto">
-                      <div className="text-[10px] text-slate-400 leading-snug">
-                        En el <strong>Análisis general</strong> no se muestran aerolíneas individuales. Todos los 346 tramos consolidados se diferencian únicamente por si cuentan con 1 sola aerolínea autorizada o 2 o más:
-                      </div>
-
+                    <div className="space-y-1.5 py-0.5 overflow-y-auto">
                       {/* Color 1: 1 sola aerolínea */}
-                      <div className="flex items-center justify-between p-2 rounded-xl bg-slate-950/80 border border-slate-800 hover:border-slate-700 transition">
-                        <div className="flex items-center gap-2.5">
+                      <div className="flex items-center justify-between p-1.5 rounded-lg bg-slate-950/80 border border-slate-800 hover:border-slate-700 transition">
+                        <div className="flex items-center gap-2">
                           <div className="relative flex items-center justify-center shrink-0">
                             <input
                               type="color"
                               value={uniqueSingleColor}
                               onChange={(e) => onChangeUniqueSingleColor && onChangeUniqueSingleColor(e.target.value)}
-                              className="w-6 h-6 rounded-full border border-white/40 cursor-pointer p-0 bg-transparent opacity-0 absolute inset-0 z-10"
+                              className="w-5 h-5 rounded-full border border-white/40 cursor-pointer p-0 bg-transparent opacity-0 absolute inset-0 z-10"
                               title="Click para cambiar color para 1 sola aerolínea"
                             />
                             <span
-                              className="w-5 h-5 rounded-full border-2 border-white/70 shadow-sm"
+                              className="w-3.5 h-3.5 rounded-full border border-white/70 shadow-sm"
                               style={{ backgroundColor: uniqueSingleColor }}
                             />
                           </div>
                           <div>
-                            <div className="text-xs font-bold text-white">1 Sola Aerolínea</div>
-                            <div className="text-[10px] text-cyan-300">Operador único exclusivo</div>
+                            <div className="text-[10px] font-bold text-white leading-tight">1 Sola Aerolínea</div>
+                            <div className="text-[8.5px] text-cyan-300">Operador exclusivo</div>
                           </div>
                         </div>
-                        <span className="font-mono text-xs font-bold text-cyan-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
+                        <span className="font-mono text-[9px] font-bold text-cyan-400 bg-slate-900 px-1.5 py-0.5 rounded border border-slate-800">
                           {singleCorridorsCount} rutas
                         </span>
                       </div>
 
                       {/* Color 2: 2 o más aerolíneas */}
-                      <div className="flex items-center justify-between p-2 rounded-xl bg-slate-950/80 border border-slate-800 hover:border-slate-700 transition">
-                        <div className="flex items-center gap-2.5">
-                          <div className="relative flex items-center justify-center shrink-0">
-                            <input
-                              type="color"
-                              value={uniqueMultiColor}
-                              onChange={(e) => onChangeUniqueMultiColor && onChangeUniqueMultiColor(e.target.value)}
-                              className="w-6 h-6 rounded-full border border-white/40 cursor-pointer p-0 bg-transparent opacity-0 absolute inset-0 z-10"
-                              title="Click para cambiar color para 2 o más aerolíneas"
-                            />
-                            <span
-                              className="w-5 h-5 rounded-full border-2 border-white/70 shadow-sm"
-                              style={{ backgroundColor: uniqueMultiColor }}
-                            />
-                          </div>
-                          <div>
-                            <div className="text-xs font-bold text-white">2 o Más Aerolíneas</div>
-                            <div className="text-[10px] text-amber-300">Ruta compartida / concurrente</div>
-                          </div>
-                        </div>
-                        <span className="font-mono text-xs font-bold text-amber-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
-                          {multiCorridorsCount} rutas
-                        </span>
-                      </div>
-
-                      <div className="p-2 rounded-lg bg-slate-950/60 border border-slate-800 text-[10px] text-slate-400 flex items-center justify-between">
-                        <span>Total de tramos consolidados:</span>
-                        <span className="font-mono font-bold text-white">{uniqueCorridors.length}</span>
-                      </div>
-                    </div>
-                  ) : (
-                    /* Mode 3 Submode B: Análisis Específico */
-                    <div className="flex-1 overflow-y-auto space-y-2 pr-1">
-                      <div className="text-[10px] text-slate-400 leading-snug">
-                        En el <strong>Análisis específico</strong> se resalta a cada aerolínea con su propio color cuando es el único operador de la ruta, y se asigna un color compartido para 2 o más aerolíneas:
-                      </div>
-
-                      {/* Multi-carrier color option */}
-                      <div className="flex items-center justify-between p-2 rounded-xl bg-slate-950/80 border border-amber-500/50">
+                      <div className="flex items-center justify-between p-1.5 rounded-lg bg-slate-950/80 border border-slate-800 hover:border-slate-700 transition">
                         <div className="flex items-center gap-2">
                           <div className="relative flex items-center justify-center shrink-0">
                             <input
                               type="color"
                               value={uniqueMultiColor}
                               onChange={(e) => onChangeUniqueMultiColor && onChangeUniqueMultiColor(e.target.value)}
-                              className="w-6 h-6 rounded-full border border-white/40 cursor-pointer p-0 bg-transparent opacity-0 absolute inset-0 z-10"
-                              title="Cambiar color para rutas compartidas por 2 o más aerolíneas"
+                              className="w-5 h-5 rounded-full border border-white/40 cursor-pointer p-0 bg-transparent opacity-0 absolute inset-0 z-10"
+                              title="Click para cambiar color para 2 o más aerolíneas"
                             />
                             <span
-                              className="w-4 h-4 rounded-full border border-white/70 shadow-sm"
+                              className="w-3.5 h-3.5 rounded-full border border-white/70 shadow-sm"
                               style={{ backgroundColor: uniqueMultiColor }}
                             />
                           </div>
                           <div>
-                            <div className="text-xs font-bold text-amber-300">2 o Más Aerolíneas</div>
-                            <div className="text-[10px] text-slate-400">Rutas compartidas</div>
+                            <div className="text-[10px] font-bold text-white leading-tight">2 o Más Aerolíneas</div>
+                            <div className="text-[8.5px] text-amber-300">Ruta compartida</div>
                           </div>
                         </div>
-                        <span className="font-mono text-xs font-bold text-amber-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
+                        <span className="font-mono text-[9px] font-bold text-amber-400 bg-slate-900 px-1.5 py-0.5 rounded border border-slate-800">
                           {multiCorridorsCount} rutas
                         </span>
                       </div>
 
-                      {/* Header for individual exclusive airlines */}
-                      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pt-1 flex items-center justify-between">
-                        <span>Aerolíneas Autorizadas ({exclusiveAirlinesCount.length}):</span>
+                      <div className="p-1 rounded bg-slate-950/60 border border-slate-800 text-[8.5px] text-slate-400 flex items-center justify-between">
+                        <span>Total tramos:</span>
+                        <span className="font-mono font-bold text-white">{uniqueCorridors.length}</span>
+                      </div>
+                    </div>
+                  ) : (
+                    /* Mode 3 Submode B: Análisis Específico */
+                    <div className="flex-1 overflow-y-auto flex flex-col min-h-0 space-y-1">
+                      {/* Multi-carrier color option */}
+                      <div className="flex items-center justify-between p-1.5 rounded-lg bg-slate-950/80 border border-amber-500/50 shrink-0">
                         <div className="flex items-center gap-1.5">
+                          <div className="relative flex items-center justify-center shrink-0">
+                            <input
+                              type="color"
+                              value={uniqueMultiColor}
+                              onChange={(e) => onChangeUniqueMultiColor && onChangeUniqueMultiColor(e.target.value)}
+                              className="w-4 h-4 rounded-full border border-white/40 cursor-pointer p-0 bg-transparent opacity-0 absolute inset-0 z-10"
+                              title="Cambiar color para rutas compartidas por 2 o más aerolíneas"
+                            />
+                            <span
+                              className="w-3 h-3 rounded-full border border-white/70 shadow-sm"
+                              style={{ backgroundColor: uniqueMultiColor }}
+                            />
+                          </div>
+                          <div>
+                            <div className="text-[9.5px] font-bold text-amber-300 leading-tight">2 o Más Aerolíneas</div>
+                            <div className="text-[8px] text-slate-400">Rutas compartidas</div>
+                          </div>
+                        </div>
+                        <span className="font-mono text-[8.5px] font-bold text-amber-400 bg-slate-900 px-1.5 py-0.2 rounded border border-slate-800">
+                          {multiCorridorsCount}
+                        </span>
+                      </div>
+
+                      {/* Header for individual exclusive airlines */}
+                      <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider pt-0.5 flex items-center justify-between shrink-0">
+                        <span>Exclusivas ({exclusiveAirlinesCount.length}):</span>
+                        <div className="flex items-center gap-1">
                           <button
                             type="button"
                             onClick={onSelectAllAirlines}
-                            className="text-[10px] text-cyan-400 hover:text-white underline cursor-pointer"
+                            className="text-[9px] text-cyan-400 hover:text-white underline cursor-pointer"
                             title="Marcar todas las aerolíneas"
                           >
-                            Marcar todas
+                            Todas
                           </button>
                           <span className="text-slate-600">|</span>
                           <button
                             type="button"
                             onClick={onDeselectAllAirlines}
-                            className="text-[10px] text-slate-400 hover:text-rose-400 underline cursor-pointer"
-                            title="Deseleccionar todas para elegir 2 o más con las casillas"
+                            className="text-[9px] text-slate-400 hover:text-rose-400 underline cursor-pointer"
+                            title="Deseleccionar todas"
                           >
-                            Deseleccionar todas
+                            Ninguna
                           </button>
                         </div>
                       </div>
 
-                      <div className="text-[10px] text-cyan-300/90 bg-cyan-950/40 p-2 rounded-xl border border-cyan-800/50 leading-tight">
-                        ☑ <strong>Selección múltiple con casillas:</strong> Marca 2 o más operadores exclusivos para compararlos simultáneamente.
-                      </div>
-
                       {/* Exclusive Airlines List with Checkboxes */}
-                      <div
-                        className={`space-y-1 overflow-y-auto pr-0.5 ${
-                          legendSize === 'compact'
-                            ? 'max-h-[50vh]'
-                            : legendSize === 'large'
-                            ? 'max-h-[66vh]'
-                            : 'max-h-[58vh]'
-                        }`}
-                      >
+                      <div className="space-y-0.5 overflow-y-auto pr-0.5 flex-1 min-h-0 custom-scrollbar">
                         {exclusiveAirlinesCount.map(([airline, count]) => {
                           const color = getAirlineColor(airline, customAirlineColors);
                           const isNoneSelected = selectedAirlines.includes('__NONE__');
@@ -2349,21 +2111,19 @@ export const FlightMap: React.FC<FlightMapProps> = ({
                             <div
                               key={airline}
                               onClick={() => onToggleAirline && onToggleAirline(airline)}
-                              className={`flex items-center justify-between rounded-lg border transition cursor-pointer select-none ${
-                                legendSize === 'compact' ? 'py-1 px-1.5' : legendSize === 'large' ? 'py-1.5 px-2.5' : 'py-1 px-2'
-                              } ${
+                              className={`flex items-center justify-between rounded px-1.5 py-0.5 border transition cursor-pointer select-none ${
                                 isChecked
-                                  ? 'bg-slate-950/90 border-cyan-500/60 shadow-sm'
-                                  : 'bg-slate-950/40 border-slate-850 opacity-60 hover:opacity-90'
+                                  ? 'bg-slate-950/80 border-cyan-500/50 shadow-sm'
+                                  : 'bg-slate-950/30 border-slate-850 opacity-50 hover:opacity-85'
                               }`}
                             >
-                              <div className="flex items-center gap-2 min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5 min-w-0 flex-1">
                                 <label className="flex items-center cursor-pointer shrink-0" onClick={(e) => e.stopPropagation()}>
                                   <input
                                     type="checkbox"
                                     checked={isChecked}
                                     onChange={() => onToggleAirline && onToggleAirline(airline)}
-                                    className="w-3.5 h-3.5 rounded border-slate-600 bg-slate-900 text-cyan-500 focus:ring-cyan-500 cursor-pointer accent-cyan-500"
+                                    className="w-3 h-3 rounded border-slate-600 bg-slate-900 text-cyan-500 focus:ring-cyan-500 cursor-pointer accent-cyan-500"
                                     title={isChecked ? `Desmarcar ${airline}` : `Marcar casilla de ${airline}`}
                                   />
                                 </label>
@@ -2373,18 +2133,16 @@ export const FlightMap: React.FC<FlightMapProps> = ({
                                     type="color"
                                     value={color}
                                     onChange={(e) => onUpdateAirlineColor && onUpdateAirlineColor(airline, e.target.value)}
-                                    className="w-4 h-4 rounded-full border border-white/40 cursor-pointer p-0 bg-transparent opacity-0 absolute inset-0 z-10"
+                                    className="w-3.5 h-3.5 rounded-full border border-white/40 cursor-pointer p-0 bg-transparent opacity-0 absolute inset-0 z-10"
                                     title={`Cambiar color de ${airline}`}
                                   />
                                   <span
-                                    className="w-3 h-3 rounded-full border border-white/70 shadow-sm"
+                                    className="w-2.5 h-2.5 rounded-full border border-white/70 shadow-sm"
                                     style={{ backgroundColor: color }}
                                   />
                                 </div>
                                 <span
-                                  className={`font-medium truncate hover:text-white ${
-                                    legendSize === 'compact' ? 'text-[10px]' : legendSize === 'large' ? 'text-xs' : 'text-[11px]'
-                                  } text-slate-200`}
+                                  className="font-medium truncate hover:text-white text-[9.5px] text-slate-200"
                                   title={airline}
                                 >
                                   {airline}
@@ -2392,8 +2150,8 @@ export const FlightMap: React.FC<FlightMapProps> = ({
                               </div>
 
                               <div className="flex items-center gap-1 shrink-0 ml-1">
-                                <span className="font-mono text-[9px] font-bold text-cyan-300 bg-slate-900 px-1 py-0.5 rounded border border-slate-800">
-                                  {count} {count === 1 ? 'ruta' : 'rutas'}
+                                <span className="font-mono text-[8.5px] font-bold text-cyan-300 bg-slate-900 px-1 py-0.2 rounded border border-slate-800">
+                                  {count}
                                 </span>
                               </div>
                             </div>
@@ -2401,15 +2159,15 @@ export const FlightMap: React.FC<FlightMapProps> = ({
                         })}
                       </div>
 
-                      <div className="p-2 rounded-lg bg-slate-950/60 border border-slate-800 text-[10px] text-slate-400 flex items-center justify-between">
+                      <div className="pt-1 mt-1 border-t border-slate-800/80 text-[8.5px] text-slate-400 flex items-center justify-between shrink-0">
                         <span>Tramos totales:</span>
-                        <span className="font-mono font-bold text-white">
-                          {singleCorridorsCount} exclusivas + {multiCorridorsCount} compartidas = {uniqueCorridors.length}
+                        <span className="font-mono font-bold text-cyan-300">
+                          {singleCorridorsCount} excl. + {multiCorridorsCount} comp. = {uniqueCorridors.length}
                         </span>
                       </div>
                     </div>
                   )}
-                </>
+                </div>
               )}
             </div>
           )}
