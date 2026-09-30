@@ -101,9 +101,12 @@ export const AfacAuthGate: React.FC<AfacAuthGateProps> = ({ onLoginSuccess }) =>
             Coordinación de Concesiones y Transporte Aéreo
           </p>
           <div className="mt-3.5 pt-3 border-t border-slate-800">
-            <h3 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight leading-snug">
-              <span className="text-cyan-400">Observatorio de Conectividad Aerocomercial</span>
+            <h3 className="text-xl sm:text-2xl md:text-3xl font-black text-white tracking-tight leading-snug">
+              <span className="text-cyan-400">Observatorio Gráfico de Rutas Aéreas Nacionales Autorizadas</span>
             </h3>
+            <p className="text-xs sm:text-sm font-medium text-slate-300 mt-1">
+              (con base en información georreferenciada)
+            </p>
           </div>
 
           <div className="mt-3 inline-block px-3 py-1 bg-amber-500/10 border border-amber-500/30 rounded-lg text-[11px] text-amber-300 font-semibold">

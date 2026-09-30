@@ -78,7 +78,7 @@ export const ColumnMapperModal: React.FC<ColumnMapperModalProps> = ({
   const optionalFields: { key: keyof ColumnMapping; label: string; desc: string }[] = [
     { key: 'originName', label: 'Nombre Aeropuerto Origen', desc: 'Ej: Benito Juárez' },
     { key: 'destName', label: 'Nombre Aeropuerto Destino', desc: 'Ej: Aeropuerto Cancún' },
-    { key: 'airline', label: 'Aerolínea / Operador', desc: 'Ej: Aerovías de México, Concesionaria Vuela' },
+    { key: 'airline', label: 'Aerolínea autorizada', desc: 'Ej: Aerovías de México, Concesionaria Vuela' },
     { key: 'authorizationDate', label: 'Fecha de Autorización', desc: 'Ej: 15/03/2016, 2021-06-30' },
   ];
 
@@ -175,7 +175,7 @@ export const ColumnMapperModal: React.FC<ColumnMapperModalProps> = ({
               </div>
 
               <p className="text-[11px] text-cyan-300/80 bg-cyan-950/30 p-2 rounded-lg border border-cyan-800/30">
-                💡 <strong>Diferenciación automática:</strong> El nombre de cada pestaña se asignará automáticamente como aerolínea/operador si la columna de aerolínea no está presente.
+                💡 <strong>Diferenciación automática:</strong> El nombre de cada pestaña se asignará automáticamente como aerolínea autorizada si la columna de aerolínea no está presente.
               </p>
             </div>
           )}

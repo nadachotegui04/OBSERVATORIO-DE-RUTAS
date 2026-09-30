@@ -112,6 +112,8 @@ interface SidebarProps {
   onChangeUniqueSingleColor?: (color: string) => void;
   uniqueMultiColor?: string;
   onChangeUniqueMultiColor?: (color: string) => void;
+  versusFilteredAirlines?: boolean;
+  onToggleVersusFilteredAirlines?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -178,6 +180,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onChangeUniqueSingleColor,
   uniqueMultiColor = '#f59e0b',
   onChangeUniqueMultiColor,
+  versusFilteredAirlines = false,
+  onToggleVersusFilteredAirlines,
 }) => {
   const [activeTab, setActiveTab] = useState<'filters' | 'visuals' | 'upload'>('filters');
 
@@ -643,7 +647,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <div>
                       <div className="font-bold text-xs">2. Rutas Autorizadas</div>
                       <div className="text-[10px] text-slate-400 mt-0.5">
-                        Visualiza rutas autorizadas clasificadas por operador único o compartidas (en dorado con luz), con análisis general y específico por aerolínea.
+                        Visualiza rutas autorizadas clasificadas por autorización única o compartidas (en dorado con luz), con análisis general y específico por aerolínea.
                       </div>
                     </div>
                   </button>
@@ -659,7 +663,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       </span>
                     </div>
                     <p className="text-[11px] text-slate-300 leading-relaxed">
-                      Cada aeropuerto se identifica con un color específico cuando operan <strong>2 o más aerolíneas</strong>, y con el <strong>color propio de cada aerolínea</strong> cuando opera una sola aerolínea (personalizable en todo momento).
+                      Cada aeropuerto se identifica con un color específico cuando tienen autorización <strong>2 o más aerolíneas</strong>, y con el <strong>color propio de cada aerolínea</strong> cuando tiene autorización una sola aerolínea (personalizable en todo momento).
                     </p>
                   </div>
                 )}
@@ -709,164 +713,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
                     <p className="text-[11px] text-slate-300 leading-relaxed border-t border-slate-800/80 pt-2">
                       {uniqueAnalysisMode === 'general'
-                        ? 'a) Análisis general: Muestra las 346 rutas consolidadas clasificadas por 1 sola aerolínea autorizada (177 de operador único) vs 2 o más aerolíneas autorizadas (169 compartidas). Utiliza las casillas para activarlas o desactivarlas en el mapa.'
+                        ? 'a) Análisis general: Muestra las 346 rutas consolidadas clasificadas por 1 sola aerolínea autorizada (177 de autorización única) vs 2 o más aerolíneas autorizadas (169 compartidas).'
                         : 'b) Análisis específico: Muestra las 655 rutas autorizadas y las 13 aerolíneas. Todas las rutas compartidas se marcan con color dorado con iluminación y las demás rutas con colores propios por aerolínea, sujeto a los filtros establecidos.'}
                     </p>
-
-                    {uniqueAnalysisMode === 'general' && (
-                      <div className="mt-2.5 p-2.5 rounded-xl bg-slate-900/90 border border-cyan-500/50 space-y-2.5 shadow-md">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-black text-cyan-300 uppercase tracking-wider flex items-center gap-1.5">
-                            <Layers className="w-3.5 h-3.5 text-cyan-400" />
-                            Selección de Rutas en el Mapa:
-                          </span>
-                          <span className="text-[10px] font-mono font-bold text-cyan-200 bg-slate-950 px-2 py-0.5 rounded border border-cyan-700/60">
-                            {filters.mode3GeneralShowSingle !== false && filters.mode3GeneralShowMulti !== false
-                              ? 'Ambas seleccionadas'
-                              : filters.mode3GeneralShowSingle !== false
-                              ? '1 aerolínea'
-                              : filters.mode3GeneralShowMulti !== false
-                              ? '2+ aerolíneas'
-                              : 'Ninguna'}
-                          </span>
-                        </div>
-
-                        {/* Interactive toggle checkboxes / cards (No 3-button bar) */}
-                        <div className="space-y-1.5">
-                          {/* Option 1: 1 aerolínea */}
-                          <div
-                            onClick={() =>
-                              onFilterChange({
-                                ...filters,
-                                mode3GeneralShowSingle: filters.mode3GeneralShowSingle === false,
-                              })
-                            }
-                            className={`flex items-center justify-between p-2 rounded-xl border transition cursor-pointer select-none ${
-                              filters.mode3GeneralShowSingle !== false
-                                ? 'bg-slate-950 border-cyan-500/80 shadow-md ring-1 ring-cyan-500/40'
-                                : 'bg-slate-950/40 border-slate-800 opacity-55 hover:opacity-90'
-                            }`}
-                          >
-                            <div className="flex items-center gap-2.5 min-w-0">
-                              <input
-                                type="checkbox"
-                                checked={filters.mode3GeneralShowSingle !== false}
-                                onChange={() =>
-                                  onFilterChange({
-                                    ...filters,
-                                    mode3GeneralShowSingle: filters.mode3GeneralShowSingle === false,
-                                  })
-                                }
-                                onClick={(e) => e.stopPropagation()}
-                                className="w-4 h-4 rounded border-slate-600 bg-slate-900 text-cyan-500 focus:ring-cyan-500 cursor-pointer accent-cyan-500 shrink-0"
-                              />
-                              <div
-                                className="relative flex items-center justify-center shrink-0"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <input
-                                  type="color"
-                                  value={uniqueSingleColor}
-                                  onChange={(e) => onChangeUniqueSingleColor && onChangeUniqueSingleColor(e.target.value)}
-                                  className="w-5 h-5 rounded-full border border-white/40 cursor-pointer p-0 bg-transparent opacity-0 absolute inset-0 z-10"
-                                  title="Cambiar color para 1 aerolínea"
-                                />
-                                <span
-                                  className="w-4 h-4 rounded-full border border-white/80 shadow-sm inline-block"
-                                  style={{ backgroundColor: uniqueSingleColor }}
-                                />
-                              </div>
-                              <div className="min-w-0">
-                                <div className="text-xs font-bold text-white leading-tight">
-                                  1 aerolínea
-                                </div>
-                                <div className="text-[9.5px] text-cyan-300">
-                                  Operador único exclusivo
-                                </div>
-                              </div>
-                            </div>
-                            <span className="font-mono text-[10px] font-black text-cyan-300 bg-slate-900 px-2 py-0.5 rounded border border-slate-800 shrink-0">
-                              177 rutas
-                            </span>
-                          </div>
-
-                          {/* Option 2: 2 o más aerolíneas */}
-                          <div
-                            onClick={() =>
-                              onFilterChange({
-                                ...filters,
-                                mode3GeneralShowMulti: filters.mode3GeneralShowMulti === false,
-                              })
-                            }
-                            className={`flex items-center justify-between p-2 rounded-xl border transition cursor-pointer select-none ${
-                              filters.mode3GeneralShowMulti !== false
-                                ? 'bg-slate-950 border-amber-500/80 shadow-md ring-1 ring-amber-500/40'
-                                : 'bg-slate-950/40 border-slate-800 opacity-55 hover:opacity-90'
-                            }`}
-                          >
-                            <div className="flex items-center gap-2.5 min-w-0">
-                              <input
-                                type="checkbox"
-                                checked={filters.mode3GeneralShowMulti !== false}
-                                onChange={() =>
-                                  onFilterChange({
-                                    ...filters,
-                                    mode3GeneralShowMulti: filters.mode3GeneralShowMulti === false,
-                                  })
-                                }
-                                onClick={(e) => e.stopPropagation()}
-                                className="w-4 h-4 rounded border-slate-600 bg-slate-900 text-amber-500 focus:ring-amber-500 cursor-pointer accent-amber-500 shrink-0"
-                              />
-                              <div
-                                className="relative flex items-center justify-center shrink-0"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <input
-                                  type="color"
-                                  value={uniqueMultiColor}
-                                  onChange={(e) => onChangeUniqueMultiColor && onChangeUniqueMultiColor(e.target.value)}
-                                  className="w-5 h-5 rounded-full border border-white/40 cursor-pointer p-0 bg-transparent opacity-0 absolute inset-0 z-10"
-                                  title="Cambiar color para 2 o más aerolíneas"
-                                />
-                                <span
-                                  className="w-4 h-4 rounded-full border border-white/80 shadow-sm inline-block"
-                                  style={{ backgroundColor: uniqueMultiColor }}
-                                />
-                              </div>
-                              <div className="min-w-0">
-                                <div className="text-xs font-bold text-white leading-tight">
-                                  2 o más aerolíneas
-                                </div>
-                                <div className="text-[9.5px] text-amber-300">
-                                  Ruta compartida / concurrente
-                                </div>
-                              </div>
-                            </div>
-                            <span className="font-mono text-[10px] font-black text-amber-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-800 shrink-0">
-                              169 rutas
-                            </span>
-                          </div>
-                        </div>
-
-                        <div className="text-[9.5px] text-slate-400 leading-tight bg-slate-950/60 p-2 rounded-lg border border-slate-800/80">
-                          ℹ️ Puedes seleccionar <strong>1 aerolínea</strong>, <strong>2 o más aerolíneas</strong> por separado, o <strong>las dos juntas</strong> para visualizarlas en el mapa.
-                        </div>
-                      </div>
-                    )}
-
-                    {uniqueAnalysisMode === 'specific' && (
-                      <div className="mt-2.5 p-2.5 rounded-xl bg-slate-900/90 border border-amber-500/50 space-y-1.5 text-[10.5px] text-slate-300 shadow-md">
-                        <div className="font-bold text-amber-300 flex items-center gap-1.5">
-                          <CheckCircle2 className="w-3.5 h-3.5 text-amber-400" />
-                          <span>655 Rutas Autorizadas • 13 Aerolíneas</span>
-                        </div>
-                        <p className="text-[10px] text-slate-300 leading-relaxed">
-                          • <strong>Rutas compartidas (2+):</strong> Marcadas en color dorado (personalizable).<br />
-                          • <strong>Rutas de operador único:</strong> Con color propio de cada aerolínea.<br />
-                          • <strong>Filtros por aerolínea:</strong> Selecciona en el panel flotante derecho <strong>Rutas Únicas</strong> las aerolíneas a visualizar.
-                        </p>
-                      </div>
-                    )}
                   </div>
                 )}
               </div>
@@ -959,7 +808,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       Top Aeropuertos
                     </span>
                     <span className="text-[10px] text-cyan-400 font-semibold block">
-                      Rutas de Autorización (Top 1 al 15)
+                      Rutas de Autorización - Top 1 al 15
                     </span>
                   </div>
                 </div>
@@ -974,7 +823,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               {/* Dropdown Selector */}
               <div>
                 <div className="flex items-center justify-between text-[11px] text-slate-300 font-semibold mb-1">
-                  <span>Seleccionar Top (1 al 15):</span>
+                  <span>Seleccionar Top:</span>
                   {filters.selectedTopN && (
                     <button
                       type="button"
@@ -1002,10 +851,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   }}
                   className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 text-xs focus:outline-none focus:border-cyan-500 font-semibold cursor-pointer"
                 >
-                  <option value="">-- Seleccionar Top (1 al 15) --</option>
+                  <option value="">-- Seleccionar Top 1 al 15 --</option>
                   {Array.from({ length: 15 }, (_, i) => i + 1).map((num) => (
                     <option key={num} value={num}>
-                      Top {num} Aeropuerto{num > 1 ? 's' : ''} ({num === 1 ? '#1 con más rutas autorizadas' : `#1 al #${num} con más rutas autorizadas`})
+                      Top {num} Aeropuerto{num > 1 ? 's' : ''}
                     </option>
                   ))}
                 </select>
@@ -1025,7 +874,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       title="Ver todos los aeropuertos del Top"
                     >
                       <RotateCcw className="w-2.5 h-2.5" />
-                      Ver todos ({filters.selectedTopN})
+                      Ver todos
                     </button>
                   )}
                 </div>
@@ -1035,7 +884,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
                 {!filters.selectedTopN ? (
                   <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-800 text-center text-slate-400 text-xs">
-                    Selecciona una opción del Top (1 al 15) en el menú superior para desplegar y seleccionar los aeropuertos.
+                    Selecciona una opción del Top 1 al 15 en el menú superior para desplegar y seleccionar los aeropuertos.
                   </div>
                 ) : displayedTopAirports.length === 0 ? (
                   <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-800 text-center text-slate-400 text-xs">

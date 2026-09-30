@@ -356,20 +356,24 @@ async function exportMapDirectCanvas(
   ctx.strokeRect(40, 40, 780, 160);
 
   ctx.fillStyle = '#38bdf8';
-  ctx.font = '900 24px -apple-system, sans-serif';
-  ctx.fillText('Observatorio de Conectividad Aerocomercial', 65, 76);
-
-  ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 15px -apple-system, sans-serif';
-  ctx.fillText('AGENCIA FEDERAL DE AVIACIÓN CIVIL', 65, 102);
+  ctx.font = '900 22px -apple-system, sans-serif';
+  ctx.fillText('Observatorio Gráfico de Rutas Aéreas Nacionales Autorizadas', 65, 74);
 
   ctx.fillStyle = '#cbd5e1';
-  ctx.font = 'bold 12.5px -apple-system, sans-serif';
-  ctx.fillText('DIRECCIÓN EJECUTIVA DE TRANSPORTE Y CONTROL AERONÁUTICO', 65, 124);
+  ctx.font = '500 12px -apple-system, sans-serif';
+  ctx.fillText('(con base en información georreferenciada)', 65, 92);
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 14px -apple-system, sans-serif';
+  ctx.fillText('AGENCIA FEDERAL DE AVIACIÓN CIVIL', 65, 114);
+
+  ctx.fillStyle = '#cbd5e1';
+  ctx.font = 'bold 12px -apple-system, sans-serif';
+  ctx.fillText('DIRECCIÓN EJECUTIVA DE TRANSPORTE Y CONTROL AERONÁUTICO', 65, 134);
 
   ctx.fillStyle = '#38bdf8';
-  ctx.font = 'bold 12.5px -apple-system, sans-serif';
-  ctx.fillText('COORDINACIÓN DE CONCESIONES Y TRANSPORTE AÉREO', 65, 144);
+  ctx.font = 'bold 12px -apple-system, sans-serif';
+  ctx.fillText('COORDINACIÓN DE CONCESIONES Y TRANSPORTE AÉREO', 65, 152);
 
   ctx.fillStyle = '#f8fafc';
   ctx.font = 'bold 15px "SF Mono", monospace, sans-serif';
@@ -642,16 +646,20 @@ async function captureLeafletDomToCanvas(
     ctx.strokeRect(20, 20, cardW, cardH);
 
     ctx.fillStyle = '#38bdf8';
-    ctx.font = 'bold 16px -apple-system, sans-serif';
-    ctx.fillText('Observatorio de Conectividad Aerocomercial', 35, 46);
+    ctx.font = 'bold 15px -apple-system, sans-serif';
+    ctx.fillText('Observatorio Gráfico de Rutas Aéreas Nacionales Autorizadas', 35, 42);
+
+    ctx.fillStyle = '#cbd5e1';
+    ctx.font = '500 10px -apple-system, sans-serif';
+    ctx.fillText('(con base en información georreferenciada)', 35, 56);
 
     ctx.fillStyle = '#ffffff';
     ctx.font = 'bold 11px -apple-system, sans-serif';
-    ctx.fillText('AGENCIA FEDERAL DE AVIACIÓN CIVIL', 35, 66);
+    ctx.fillText('AGENCIA FEDERAL DE AVIACIÓN CIVIL', 35, 72);
 
     ctx.fillStyle = '#94a3b8';
     ctx.font = 'bold 9.5px -apple-system, sans-serif';
-    ctx.fillText('DIRECCIÓN EJECUTIVA DE TRANSPORTE Y CONTROL AERONÁUTICO', 35, 82);
+    ctx.fillText('DIRECCIÓN EJECUTIVA DE TRANSPORTE Y CONTROL AERONÁUTICO', 35, 87);
 
     ctx.fillStyle = '#38bdf8';
     ctx.font = 'bold 10px "JetBrains Mono", monospace, sans-serif';
@@ -961,16 +969,20 @@ function createVectorMapCanvas(
     ctx.strokeRect(20, 20, cardW, cardH);
 
     ctx.fillStyle = '#38bdf8';
-    ctx.font = 'bold 16px -apple-system, sans-serif';
-    ctx.fillText('Observatorio de Conectividad Aerocomercial', 35, 46);
+    ctx.font = 'bold 15px -apple-system, sans-serif';
+    ctx.fillText('Observatorio Gráfico de Rutas Aéreas Nacionales Autorizadas', 35, 42);
+
+    ctx.fillStyle = '#cbd5e1';
+    ctx.font = '500 10px -apple-system, sans-serif';
+    ctx.fillText('(con base en información georreferenciada)', 35, 56);
 
     ctx.fillStyle = '#ffffff';
     ctx.font = 'bold 11px -apple-system, sans-serif';
-    ctx.fillText('AGENCIA FEDERAL DE AVIACIÓN CIVIL', 35, 66);
+    ctx.fillText('AGENCIA FEDERAL DE AVIACIÓN CIVIL', 35, 72);
 
     ctx.fillStyle = '#94a3b8';
     ctx.font = 'bold 9.5px -apple-system, sans-serif';
-    ctx.fillText('DIRECCIÓN EJECUTIVA DE TRANSPORTE Y CONTROL AERONÁUTICO', 35, 82);
+    ctx.fillText('DIRECCIÓN EJECUTIVA DE TRANSPORTE Y CONTROL AERONÁUTICO', 35, 87);
 
     ctx.fillStyle = '#38bdf8';
     ctx.font = 'bold 10px monospace';
@@ -1118,8 +1130,8 @@ async function exportComparisonDirectCanvas(
 
   // Header Title
   ctx.fillStyle = '#38bdf8';
-  ctx.font = '900 24px -apple-system, sans-serif';
-  ctx.fillText('Observatorio de Conectividad Aerocomercial — Comparativa Side-by-Side', 50, 42);
+  ctx.font = '900 22px -apple-system, sans-serif';
+  ctx.fillText('Observatorio Gráfico de Rutas Aéreas Nacionales Autorizadas — Comparativa Side-by-Side', 50, 42);
 
   ctx.fillStyle = '#ffffff';
   ctx.font = 'bold 15px -apple-system, sans-serif';
@@ -1313,7 +1325,7 @@ async function exportComparisonDirectCanvas(
     ctx.fillStyle = '#94a3b8';
     ctx.font = 'bold 14px -apple-system, sans-serif';
     const paneSubtitle = mapMode === 'airports'
-      ? `${paneAirports.length} aeropuertos con operaciones`
+      ? `${paneAirports.length} aeropuertos con autorizaciones`
       : `${paneRoutes.length} rutas autorizadas • ${paneAirports.length} aeropuertos`;
     ctx.fillText(paneSubtitle, startX + 45, startY + 86);
     ctx.restore();
@@ -1346,7 +1358,7 @@ async function exportComparisonDirectCanvas(
 
     ctx.fillStyle = '#38bdf8';
     ctx.font = 'bold 15px -apple-system, sans-serif';
-    ctx.fillText(`VIÑETA CROMÁTICA DE AEROLÍNEAS EN COMPARATIVA (${uniqueAirlines.length} OPERADORES):`, 40, cardY + 30);
+    ctx.fillText(`VIÑETA CROMÁTICA DE AEROLÍNEAS EN COMPARATIVA (${uniqueAirlines.length} AEROLÍNEAS AUTORIZADAS):`, 40, cardY + 30);
 
     const itemsPerRow = 6;
     const colW = (width - 100) / itemsPerRow;
@@ -1433,8 +1445,8 @@ export async function exportComparisonToImage(
           ctx.strokeRect(0, 0, dualCanvas.width, headerH);
 
           ctx.fillStyle = '#38bdf8';
-          ctx.font = 'bold 24px -apple-system, sans-serif';
-          ctx.fillText('Observatorio de Conectividad Aerocomercial — Comparativa Side-by-Side', border + 12, 46);
+          ctx.font = 'bold 22px -apple-system, sans-serif';
+          ctx.fillText('Observatorio Gráfico de Rutas Aéreas Nacionales Autorizadas — Comparativa Side-by-Side', border + 12, 46);
 
           ctx.fillStyle = '#ffffff';
           ctx.font = 'bold 15px -apple-system, sans-serif';
@@ -1715,7 +1727,8 @@ export function exportComparisonToStandaloneHtml(
 <body>
   <div class="top-bar">
     <div>
-      <h1 style="font-size: 15px; font-weight: 800; color: #38bdf8; margin: 0;">Observatorio de Conectividad Aerocomercial</h1>
+      <h1 style="font-size: 15px; font-weight: 800; color: #38bdf8; margin: 0;">Observatorio Gráfico de Rutas Aéreas Nacionales Autorizadas</h1>
+      <div style="font-size: 10px; color: #cbd5e1; font-weight: 500; margin-top: 1px;">(con base en información georreferenciada)</div>
       <div style="font-size: 11px; font-weight: bold; color: #ffffff; margin-top: 1px;">
         AGENCIA FEDERAL DE AVIACIÓN CIVIL
       </div>
@@ -2331,7 +2344,8 @@ export function exportMapToStandaloneHtml(
 </head>
 <body>
   <div class="header">
-    <h1>Observatorio de Conectividad Aerocomercial</h1>
+    <h1>Observatorio Gráfico de Rutas Aéreas Nacionales Autorizadas</h1>
+    <div style="font-size: 11.5px; color: #cbd5e1; font-weight: 500; margin-top: 2px;">(con base en información georreferenciada)</div>
     <div style="font-size: 13px; font-weight: bold; color: #ffffff; margin-top: 4px;">
       AGENCIA FEDERAL DE AVIACIÓN CIVIL
     </div>

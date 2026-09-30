@@ -62,6 +62,7 @@ const INITIAL_FILTERS: FilterState = {
   selectedTopN: null,
   mode3GeneralShowSingle: true,
   mode3GeneralShowMulti: true,
+  versusFilteredAirlines: false,
 };
 
 const DEFAULT_SAVED_MAPS: SavedMap[] = [
@@ -1063,6 +1064,13 @@ export default function App() {
     }));
   };
 
+  const handleToggleVersusFilteredAirlines = () => {
+    setFilters((prev) => ({
+      ...prev,
+      versusFilteredAirlines: !prev.versusFilteredAirlines,
+    }));
+  };
+
   return (
     <div className="flex flex-col h-screen w-screen bg-slate-950 text-slate-100 font-sans overflow-hidden select-none relative">
       {/* AFAC Confidential Access Gatekeeper: strictly required before entering */}
@@ -1162,6 +1170,8 @@ export default function App() {
           onChangeUniqueSingleColor={setUniqueSingleColor}
           uniqueMultiColor={uniqueMultiColor}
           onChangeUniqueMultiColor={setUniqueMultiColor}
+          versusFilteredAirlines={Boolean(filters.versusFilteredAirlines)}
+          onToggleVersusFilteredAirlines={handleToggleVersusFilteredAirlines}
         />
 
         {/* Center Canvas / Map View */}
@@ -1312,6 +1322,8 @@ export default function App() {
                 onSelectAllAirlines={handleSelectAllAirlines}
                 onDeselectAllAirlines={handleDeselectAllAirlines}
                 onUpdateAirlineColor={handleUpdateAirlineColor}
+                versusFilteredAirlines={Boolean(filters.versusFilteredAirlines)}
+                onToggleVersusFilteredAirlines={handleToggleVersusFilteredAirlines}
               />
             </div>
           )}
@@ -1330,6 +1342,7 @@ export default function App() {
               onToggleAirportLabels={setShowAirportLabels}
               iataFontSize={iataFontSize}
               onChangeIataFontSize={setIataFontSize}
+              onSelectRoute={(route) => setSelectedRouteForDetails(route)}
             />
           )}
 

@@ -20,7 +20,6 @@ export const AirportConnectionsModal: React.FC<AirportConnectionsModalProps> = (
   getAirlineColor,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterType, setFilterType] = useState<'all' | 'Nacional' | 'Internacional'>('all');
 
   const airportInfo = useMemo(() => {
     if (!airportCode) return null;
@@ -45,7 +44,7 @@ export const AirportConnectionsModal: React.FC<AirportConnectionsModalProps> = (
     return getAirportConnections(airportCode, routes);
   }, [airportCode, routes]);
 
-  // Filtered connections by search & type
+  // Filtered connections by search
   const filteredConnections = useMemo(() => {
     return connections.filter(conn => {
       const matchesSearch =
@@ -54,11 +53,9 @@ export const AirportConnectionsModal: React.FC<AirportConnectionsModalProps> = (
         (conn.destCity && conn.destCity.toLowerCase().includes(searchTerm.toLowerCase())) ||
         conn.airlines.some(a => a.airline.toLowerCase().includes(searchTerm.toLowerCase()));
 
-      const matchesType = filterType === 'all' || conn.flightType === filterType;
-
-      return matchesSearch && matchesType;
+      return matchesSearch;
     });
-  }, [connections, searchTerm, filterType]);
+  }, [connections, searchTerm]);
 
   // Aggregated airport totals
   const uniqueAirlines = useMemo(() => {
@@ -152,27 +149,12 @@ export const AirportConnectionsModal: React.FC<AirportConnectionsModalProps> = (
             />
           </div>
 
-          <div className="flex items-center gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs shrink-0 self-start sm:self-auto">
-            <button
-              onClick={() => setFilterType('all')}
-              className={`px-2.5 py-1 rounded-lg font-medium transition cursor-pointer ${
-                filterType === 'all'
-                  ? 'bg-cyan-500 text-slate-950 font-bold'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              Todos ({connections.length})
-            </button>
-            <button
-              onClick={() => setFilterType('Nacional')}
-              className={`px-2.5 py-1 rounded-lg font-medium transition cursor-pointer ${
-                filterType === 'Nacional'
-                  ? 'bg-cyan-500 text-slate-950 font-bold'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              Nacionales
-            </button>
+          <div className="flex items-center gap-1.5 bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800 text-xs shrink-0 font-medium text-slate-300">
+            <span>Destinos:</span>
+            <span className="font-bold text-cyan-400 font-mono">{filteredConnections.length}</span>
+            {filteredConnections.length !== connections.length && (
+              <span className="text-[10px] text-slate-500 font-mono">de {connections.length}</span>
+            )}
           </div>
         </div>
 
@@ -182,7 +164,7 @@ export const AirportConnectionsModal: React.FC<AirportConnectionsModalProps> = (
             <div className="text-center py-12 text-slate-400">
               <Building2 className="w-10 h-10 mx-auto text-slate-400 mb-2" />
               <p className="text-sm font-semibold text-slate-300">No se encontraron destinos coincidentes</p>
-              <p className="text-xs text-slate-400 mt-1">Prueba con otro término de búsqueda o cambia el filtro de tipo de vuelo.</p>
+              <p className="text-xs text-slate-400 mt-1">Prueba con otro término de búsqueda.</p>
             </div>
           ) : (
             filteredConnections.map(conn => {
@@ -202,15 +184,6 @@ export const AirportConnectionsModal: React.FC<AirportConnectionsModalProps> = (
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-bold text-white">
                             {conn.destCity || destAirportInfo?.city || conn.destName}
-                          </span>
-                          <span
-                            className={`text-[10px] font-semibold px-2 py-0.2 rounded-full border ${
-                              conn.flightType === 'Nacional'
-                                ? 'bg-sky-950/80 text-sky-400 border-sky-800/60'
-                                : 'bg-purple-950/80 text-purple-300 border-purple-800/60'
-                            }`}
-                          >
-                            {conn.flightType}
                           </span>
                         </div>
                         <p className="text-[11px] text-slate-400">
@@ -268,7 +241,7 @@ export const AirportConnectionsModal: React.FC<AirportConnectionsModalProps> = (
                                 )}
                                 <div className="text-[10px] text-slate-400 mt-0.5">
                                   {op.aircraft ? `${op.aircraft} • ` : ''}
-                                  {op.flightsCount.toLocaleString()} ops • {op.passengers.toLocaleString()} pax
+                                  {op.flightsCount.toLocaleString()} autorizaciones • {op.passengers.toLocaleString()} pax
                                 </div>
                               </div>
                             </div>

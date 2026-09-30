@@ -129,6 +129,7 @@ export interface FilterState {
   mode1SpecificAirlineColor?: string;
   mode3GeneralShowSingle?: boolean;
   mode3GeneralShowMulti?: boolean;
+  versusFilteredAirlines?: boolean;
 }
 
 export interface SavedMap {

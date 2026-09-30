@@ -178,7 +178,7 @@ export const RouteDetailsModal: React.FC<RouteDetailsModalProps> = ({
             <div className="bg-slate-950/80 border border-slate-800 p-3 rounded-xl">
               <span className="text-[10px] text-slate-400 block font-medium">Aerolíneas Autorizadas</span>
               <span className="text-base font-black text-cyan-400">{operators.length}</span>
-              <span className="text-[10px] text-slate-400 block font-medium">operador{operators.length > 1 ? 'es' : ''}</span>
+              <span className="text-[10px] text-slate-400 block font-medium">autorizada{operators.length > 1 ? 's' : ''}</span>
             </div>
           </div>
 
@@ -192,7 +192,7 @@ export const RouteDetailsModal: React.FC<RouteDetailsModalProps> = ({
                 </span>
               </div>
               <span className="text-[10px] text-slate-400">
-                {operators.length > 1 ? 'Ruta compartida / multi-operador' : 'Operador exclusivo'}
+                {operators.length > 1 ? 'Ruta compartida' : 'Autorización exclusiva'}
               </span>
             </div>
 
@@ -260,7 +260,7 @@ export const RouteDetailsModal: React.FC<RouteDetailsModalProps> = ({
           <div className="text-slate-400 text-[11px]">
             {isUniqueMode
               ? 'Mostrando consolidado de ruta única sin duplicidades'
-              : 'Detalle de ruta y operadores autorizados'}
+              : 'Detalle de ruta y autorizaciones vigentes'}
           </div>
           <button
             onClick={onClose}

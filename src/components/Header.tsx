@@ -33,34 +33,34 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   return (
     <header className="min-h-[3.75rem] py-1.5 bg-slate-900 border-b border-slate-800 px-3 md:px-4 flex items-center justify-between gap-2 z-20 shrink-0">
-      {/* Brand & Title — Full institutional name visible without being covered */}
-      <div className="flex items-center gap-2.5 shrink-0">
-        <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-cyan-600 to-sky-400 flex items-center justify-center shadow-lg shadow-cyan-500/20 text-slate-950 font-black shrink-0">
+      {/* Brand & Title — Compact institutional name visible without crowding right options */}
+      <div className="flex items-center gap-2 md:gap-3 min-w-0">
+        <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-cyan-600 to-sky-400 flex items-center justify-center shadow-lg shadow-cyan-500/20 text-slate-950 font-black shrink-0">
           <Plane className="w-4 h-4 text-slate-950 -rotate-45" />
         </div>
-        <div className="flex items-center gap-2.5">
-          <div className="shrink-0">
+        <div className="flex items-center gap-2 md:gap-2.5 min-w-0">
+          <div className="shrink-0 hidden sm:block">
             <div className="flex items-center gap-2">
-              <h1 className="text-xs md:text-[13px] font-extrabold text-white tracking-tight leading-tight whitespace-nowrap">
+              <h1 className="text-[11px] md:text-xs font-bold text-white tracking-tight leading-tight whitespace-nowrap">
                 Agencia Federal de Aviación Civil
               </h1>
             </div>
             <div className="leading-tight mt-0.5">
-              <p className="text-[10px] md:text-[10.5px] font-bold text-slate-300 whitespace-nowrap">
+              <p className="text-[9px] md:text-[9.5px] font-medium text-slate-300 whitespace-nowrap">
                 Dirección Ejecutiva de Transporte y Control Aeronáutico
               </p>
-              <p className="text-[9.5px] md:text-[10px] font-semibold text-cyan-400 whitespace-nowrap">
+              <p className="text-[8.5px] md:text-[9px] font-medium text-cyan-400 whitespace-nowrap">
                 Coordinación de Concesiones y Transporte Aéreo
               </p>
             </div>
           </div>
-          <div className="h-7 w-px bg-slate-800 shrink-0"></div>
-          <div className="shrink-0">
-            <h2 className="text-xs md:text-[13px] font-black text-white tracking-tight flex items-center gap-1.5 whitespace-nowrap">
-              <span className="text-cyan-400">Observatorio de Conectividad Aerocomercial</span>
+          <div className="h-6 w-px bg-slate-800 shrink-0 hidden sm:block"></div>
+          <div className="min-w-0">
+            <h2 className="text-xs sm:text-[13px] md:text-[14px] lg:text-[15px] font-extrabold text-white tracking-tight flex items-center gap-1.5 whitespace-nowrap truncate">
+              <span className="text-cyan-400">Observatorio Gráfico de Rutas Aéreas Nacionales Autorizadas</span>
             </h2>
-            <p className="text-[9.5px] md:text-[10px] text-slate-400 font-medium whitespace-nowrap">
-              Plataforma de Inteligencia Aeronáutica
+            <p className="text-[8.5px] sm:text-[9.5px] text-slate-400 font-medium whitespace-nowrap mt-0.5 truncate">
+              (con base en información georreferenciada)
             </p>
           </div>
         </div>
