@@ -5,6 +5,7 @@ import {
   exportMapToStandaloneHtml,
   exportComparisonToImage,
   exportComparisonToStandaloneHtml,
+  generateExportFilename,
 } from '../utils/exporter';
 import { getAirlineColor } from './FlightMap';
 import {
@@ -31,6 +32,7 @@ interface ExportModalProps {
   activeMapMode?: MapVisualizationMode;
   mapElementId?: string;
   customAirlineColors?: Record<string, string>;
+  selectedAirlines?: string[];
   isAdmin?: boolean;
 }
 
@@ -44,6 +46,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   activeMapMode = 'routes_by_airline',
   mapElementId = 'main-flight-map',
   customAirlineColors,
+  selectedAirlines = [],
 }) => {
   const [selectedExportScope, setSelectedExportScope] = useState<'current' | 'compare' | 'mode1' | 'mode2' | 'mode3'>(
     activeView === 'compare' ? 'compare' : 'current'
@@ -62,9 +65,16 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
       if (selectedExportScope === 'compare' || (activeView === 'compare' && selectedExportScope === 'current')) {
         // Export Dual Comparison View
+        const filename = generateExportFilename({
+          prefix: 'comparativa_side_by_side',
+          routes,
+          selectedAirlines,
+          extension: 'png',
+          isDual: true,
+        });
         await exportComparisonToImage(
           'compare-view-container',
-          `comparativa_side_by_side_${Date.now()}.png`,
+          filename,
           routes,
           datasetRoutes,
           airports,
@@ -77,9 +87,15 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       } else {
         // Single map export for chosen visualization mode
         const targetElement = document.getElementById('main-flight-map') ? 'main-flight-map' : mapElementId;
+        const filename = generateExportFilename({
+          prefix: `mapa_rutas_mexico_${selectedExportScope}`,
+          routes,
+          selectedAirlines,
+          extension: 'png',
+        });
         await exportMapToImage(
           targetElement,
-          `mapa_rutas_mexico_${selectedExportScope}_${Date.now()}.png`,
+          filename,
           routes,
           airports,
           customAirlineColors,
@@ -119,7 +135,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         else if (selectedExportScope === 'mode2' || activeMapMode === 'routes_by_airline') titleMode = '2. Rutas Autorizadas por Aerolínea - México';
         else if (selectedExportScope === 'mode3' || activeMapMode === 'unique_routes') titleMode = '3. Rutas Únicas y Exclusividad - México';
 
-        exportMapToStandaloneHtml(routes, airports, titleMode, customAirlineColors);
+        exportMapToStandaloneHtml(routes, airports, titleMode, customAirlineColors, selectedAirlines);
       }
 
       setSuccessType('html');

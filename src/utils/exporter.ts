@@ -3,6 +3,150 @@ import html2canvas from 'html2canvas';
 import { FlightRoute, Airport } from '../types';
 import { generateGreatCircleArc } from './geodesic';
 import { getAirlineColor } from '../components/FlightMap';
+import mexicoStatesData from '../data/mexicoStates.json';
+
+export const AIRLINE_TO_IATA: Record<string, string> = {
+  aeromexico: 'AM',
+  'aerovias de mexico': 'AM',
+  'aeromexico connect': '5D',
+  aerolitoral: '5D',
+  volaris: 'Y4',
+  'concesionaria vuela': 'Y4',
+  'concesionaria vuela compania de aviacion': 'Y4',
+  vivaaerobus: 'VB',
+  'viva aerobus': 'VB',
+  viva: 'VB',
+  'aeroenlaces nacionales': 'VB',
+  aeroenlaces: 'VB',
+  tar: 'YQ',
+  'tar aerolineas': 'YQ',
+  'link conexion aerea': 'YQ',
+  'link conexion': 'YQ',
+  'aereo calafia': 'A3',
+  calafia: 'A3',
+  mexicana: 'MX',
+  'mexicana de aviacion': 'MX',
+  'aerolinea del estado mexicano': 'MX',
+  magnicharters: 'UJ',
+  'grupo aereo monterrey': 'UJ',
+  aerus: 'ZV',
+  'aerotransportes rafilher': 'ZV',
+  interjet: '4O',
+  'abc aerolineas': '4O',
+  aeromar: 'VW',
+  'transportes aeromar': 'VW',
+  estafeta: 'E7',
+  'estafeta carga aerea': 'E7',
+  mas: 'M7',
+  'mas air': 'M7',
+  masair: 'M7',
+  'aerotransportes mas de carga': 'M7',
+  tsm: 'VTM',
+  'aeronaves tsm': 'VTM',
+  'tm aerolineas': 'T2',
+  tum: 'T2',
+  'tum aerocarga': 'T2',
+  aerounion: '6R',
+  'aerotransporte de carga union': '6R',
+  aerotucan: 'RT',
+  'aereo servicio guerrero': 'SG',
+  'maya air': '2M',
+  'american airlines': 'AA',
+  american: 'AA',
+  'united airlines': 'UA',
+  united: 'UA',
+  delta: 'DL',
+  'delta air lines': 'DL',
+  copa: 'CM',
+  'copa airlines': 'CM',
+  avianca: 'AV',
+  iberia: 'IB',
+  'air france': 'AF',
+  lufthansa: 'LH',
+  'british airways': 'BA',
+  klm: 'KL',
+  latam: 'LA',
+  'air canada': 'AC',
+  southwest: 'WN',
+  alaska: 'AS',
+};
+
+/**
+ * Returns the 2-3 character official IATA code for an airline name.
+ * Dynamically resolves normalized names, variations, or returns uppercase fallback.
+ */
+export function getAirlineIataCode(airlineName: string): string {
+  if (!airlineName || typeof airlineName !== 'string') return '';
+  const trimmed = airlineName.trim();
+  if (/^[A-Z0-9]{2,3}$/.test(trimmed)) return trimmed;
+  const norm = trimmed.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  for (const [key, code] of Object.entries(AIRLINE_TO_IATA)) {
+    if (norm === key || norm.includes(key) || key.includes(norm)) {
+      return code;
+    }
+  }
+  const parts = trimmed.split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+  return trimmed.slice(0, 2).toUpperCase();
+}
+
+/**
+ * Generates dynamic, descriptive filenames reacting to the active session filters,
+ * explicitly embedding the IATA codes of the chosen airlines.
+ */
+export function generateExportFilename(options: {
+  prefix?: string;
+  routes?: FlightRoute[];
+  selectedAirlines?: string[];
+  airlineA?: string;
+  airlineB?: string;
+  extension: 'png' | 'html' | 'xlsx';
+  isDual?: boolean;
+}): string {
+  const {
+    prefix = 'mapa_rutas_mexico',
+    routes = [],
+    selectedAirlines = [],
+    airlineA,
+    airlineB,
+    extension,
+    isDual = false,
+  } = options;
+  const dateStr = new Date().toISOString().slice(0, 10);
+
+  if (isDual) {
+    const codeA = !airlineA || airlineA === 'all' || airlineA.includes('Todas') ? 'TODAS' : getAirlineIataCode(airlineA);
+    const codeB = !airlineB || airlineB === 'all' || airlineB.includes('Todas') ? 'TODAS' : getAirlineIataCode(airlineB);
+    return `comparativa_dual_${codeA}_vs_${codeB}_${dateStr}.${extension}`;
+  }
+
+  let iataTag = '';
+  if (selectedAirlines && selectedAirlines.length > 0) {
+    const codes = Array.from(new Set(selectedAirlines.map(getAirlineIataCode).filter(Boolean)));
+    if (codes.length <= 4) {
+      iataTag = codes.join('_');
+    } else {
+      iataTag = `${codes.slice(0, 3).join('_')}_etc`;
+    }
+  } else if (routes && routes.length > 0) {
+    const uniqueAirlines = Array.from(new Set(routes.map((r) => r.airline))).filter(Boolean) as string[];
+    if (uniqueAirlines.length === 1) {
+      iataTag = getAirlineIataCode(uniqueAirlines[0]);
+    } else if (uniqueAirlines.length <= 3) {
+      iataTag = uniqueAirlines.map(getAirlineIataCode).filter(Boolean).join('_');
+    } else {
+      iataTag = 'TODAS';
+    }
+  }
+
+  const cleanPrefix = prefix.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_-]/g, '_');
+  if (iataTag) {
+    return `${cleanPrefix}_${iataTag}_${dateStr}.${extension}`;
+  }
+  return `${cleanPrefix}_${dateStr}.${extension}`;
+}
 
 // Vector coordinates for Mexican Republic mainland and Baja California peninsula
 export const MEXICO_MAINLAND_OUTLINE: [number, number][] = [
@@ -289,7 +433,8 @@ async function exportMapDirectCanvas(
 
 /**
  * Direct Leaflet DOM Screen Compositor
- * Captures loaded map tiles, overlay SVG arcs, and airport markers exactly as rendered on screen
+ * Captures loaded map tiles, Mexico states vector boundaries, great-circle flight arcs,
+ * and airport markers with exact 1:1 mathematical precision matching the on-screen zoom and center.
  */
 async function captureLeafletDomToCanvas(
   element: HTMLElement,
@@ -299,9 +444,13 @@ async function captureLeafletDomToCanvas(
   mapMode = 'routes_by_airline'
 ): Promise<HTMLCanvasElement | null> {
   try {
+    const map = (element as any)?._leaflet_map ||
+      (element.querySelector('.leaflet-container') as any)?._leaflet_map ||
+      ((window as any)[`__leaflet_map_${element.id}`]) ||
+      (element.id ? (document.getElementById(element.id) as any)?._leaflet_map : null);
     const rect = element.getBoundingClientRect();
-    const width = Math.round(rect.width);
-    const height = Math.round(rect.height);
+    const width = Math.round(map && map.getSize ? map.getSize().x : rect.width);
+    const height = Math.round(map && map.getSize ? map.getSize().y : rect.height);
     if (width <= 50 || height <= 50) return null;
 
     const scale = 2; // Crisp 2x retina export
@@ -317,9 +466,22 @@ async function captureLeafletDomToCanvas(
     ctx.fillStyle = '#0b0f19';
     ctx.fillRect(0, 0, width, height);
 
-    // 2. Draw all loaded base map tiles at their exact rendered screen positions
+    // Coordinate projection function strictly locked to Leaflet's active screen viewport
+    const project = (lat: number, lng: number): [number, number] => {
+      if (map && typeof map.latLngToContainerPoint === 'function') {
+        const pt = map.latLngToContainerPoint([lat, lng]);
+        return [pt.x, pt.y];
+      }
+      return [width / 2, height / 2];
+    };
+
+    // 2. Draw loaded base map tiles safely (check with 1x1 scratch canvas to guarantee NO tainting)
+    const testCanvas = document.createElement('canvas');
+    testCanvas.width = 1;
+    testCanvas.height = 1;
+    const testCtx = testCanvas.getContext('2d');
+
     const tiles = element.querySelectorAll('img.leaflet-tile') as NodeListOf<HTMLImageElement>;
-    let tilesRendered = 0;
     tiles.forEach((tile) => {
       if (!tile.complete || tile.naturalWidth === 0) return;
       const tRect = tile.getBoundingClientRect();
@@ -328,94 +490,144 @@ async function captureLeafletDomToCanvas(
       const w = tRect.width;
       const h = tRect.height;
       if (x + w < 0 || y + h < 0 || x > width || y > height) return;
-      try {
-        ctx.drawImage(tile, x, y, w, h);
-        tilesRendered++;
-      } catch {
-        // Continue if single tile fails
+      
+      let isCORSValid = false;
+      if (testCtx) {
+        try {
+          testCtx.clearRect(0, 0, 1, 1);
+          testCtx.drawImage(tile, 0, 0, 1, 1);
+          testCanvas.toDataURL();
+          isCORSValid = true;
+        } catch {
+          isCORSValid = false;
+        }
+      }
+      if (isCORSValid) {
+        try {
+          ctx.drawImage(tile, x, y, w, h);
+        } catch {}
       }
     });
 
-    // 3. Draw vector layers (Mexico Republic boundaries and routes) from SVG overlay in all modes
-    const svgOverlay = element.querySelector('.leaflet-overlay-pane svg') as SVGElement | null;
-    if (svgOverlay) {
-      try {
-        const svgRect = svgOverlay.getBoundingClientRect();
-        const svgString = new XMLSerializer().serializeToString(svgOverlay);
-        const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
-        const url = URL.createObjectURL(svgBlob);
-        const img = new Image();
-        await new Promise<void>((resolve) => {
-          img.onload = () => {
-            ctx.drawImage(img, svgRect.left - rect.left, svgRect.top - rect.top, svgRect.width, svgRect.height);
-            URL.revokeObjectURL(url);
-            resolve();
-          };
-          img.onerror = () => {
-            URL.revokeObjectURL(url);
-            resolve();
-          };
-          img.src = url;
-        });
-      } catch (e) {
-        console.warn('SVG overlay capture notice:', e);
-      }
+    // 3. Draw Republic of Mexico 32 States GeoJSON boundaries (exact 1:1 projection)
+    if (mexicoStatesData && Array.isArray((mexicoStatesData as any).features)) {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.45)';
+      ctx.lineWidth = 1.3;
+      ctx.fillStyle = 'rgba(14, 116, 144, 0.04)';
+      (mexicoStatesData as any).features.forEach((feature: any) => {
+        const geom = feature.geometry;
+        if (!geom) return;
+        const drawPolygonCoords = (ring: number[][]) => {
+          ctx.beginPath();
+          ring.forEach(([lng, lat], i) => {
+            const [px, py] = project(lat, lng);
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+          });
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+        };
+
+        if (geom.type === 'Polygon') {
+          geom.coordinates.forEach(drawPolygonCoords);
+        } else if (geom.type === 'MultiPolygon') {
+          geom.coordinates.forEach((poly: any) => poly.forEach(drawPolygonCoords));
+        }
+      });
+      ctx.restore();
     }
 
-    // 4. Draw airport markers from DOM at their exact rendered positions
-    const markerIcons = element.querySelectorAll('.leaflet-marker-icon') as NodeListOf<HTMLElement>;
-    markerIcons.forEach((m) => {
-      const mRect = m.getBoundingClientRect();
-      const centerX = mRect.left - rect.left + mRect.width / 2;
-      const centerY = mRect.top - rect.top + mRect.height / 2;
-      if (centerX < 0 || centerY < 0 || centerX > width || centerY > height) return;
+    // 4. Draw flight routes: exact GreatCircle arc points projected through Leaflet map
+    if (mapMode !== 'airports') {
+      routes.forEach((route) => {
+        const arcPoints = generateGreatCircleArc(
+          [route.originLat, route.originLng],
+          [route.destLat, route.destLng],
+          35,
+          0.14
+        );
 
-      const pin = m.querySelector('.airport-pin') as HTMLElement | null;
-      const pinBg = pin ? window.getComputedStyle(pin).backgroundColor : '#06b6d4';
-      const pinRadius = pin ? Math.max(4, pin.offsetWidth / 2) : 7;
+        const strokeColor = getAirlineColor(route.airline, customColors);
+        const lineWeight = Math.min(6, Math.max(2, (route.flightsCount / 500) * 1.5));
+
+        // Glow
+        ctx.save();
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = lineWeight + 2.5;
+        ctx.globalAlpha = 0.22;
+        ctx.beginPath();
+        arcPoints.forEach((pt, i) => {
+          const [px, py] = project(pt[0], pt[1]);
+          if (i === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        });
+        ctx.stroke();
+        ctx.restore();
+
+        // Core line
+        ctx.save();
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = lineWeight;
+        ctx.globalAlpha = 0.88;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        arcPoints.forEach((pt, i) => {
+          const [px, py] = project(pt[0], pt[1]);
+          if (i === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        });
+        ctx.stroke();
+        ctx.restore();
+      });
+    }
+
+    // 5. Draw airport nodes and IATA labels
+    airports.forEach((airport) => {
+      const [ax, ay] = project(airport.lat, airport.lng);
+      if (ax < -30 || ay < -30 || ax > width + 30 || ay > height + 30) return;
+      const isMajor = ['MEX', 'CUN', 'GDL', 'MTY', 'TIJ', 'NLU'].includes(airport.code);
+      const radius = isMajor ? 7.5 : 5.5;
 
       ctx.save();
-      // Glow aura
-      ctx.fillStyle = pinBg;
+      // Glow
+      ctx.fillStyle = '#06b6d4';
       ctx.globalAlpha = 0.35;
       ctx.beginPath();
-      ctx.arc(centerX, centerY, pinRadius + 5, 0, Math.PI * 2);
+      ctx.arc(ax, ay, radius + 4, 0, Math.PI * 2);
       ctx.fill();
 
-      // Sharp circle
+      // Sharp dot
       ctx.globalAlpha = 1;
-      ctx.fillStyle = pinBg;
+      ctx.fillStyle = isMajor ? '#38bdf8' : '#0ea5e9';
       ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 2;
+      ctx.lineWidth = 1.8;
       ctx.beginPath();
-      ctx.arc(centerX, centerY, pinRadius, 0, Math.PI * 2);
+      ctx.arc(ax, ay, radius, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
       ctx.restore();
-    });
 
-    // 5. Draw IATA labels from permanent tooltips at their exact rendered positions
-    const badges = element.querySelectorAll('.airport-iata-badge') as NodeListOf<HTMLElement>;
-    badges.forEach((badge) => {
-      const bRect = badge.getBoundingClientRect();
-      const x = bRect.left - rect.left;
-      const y = bRect.top - rect.top;
-      const w = bRect.width;
-      const h = bRect.height;
-      if (x + w < 0 || y + h < 0 || x > width || y > height) return;
-
+      // IATA Label
       ctx.save();
+      ctx.font = 'bold 11px "JetBrains Mono", monospace';
+      const tw = ctx.measureText(airport.code).width;
+      const labelW = tw + 8;
+      const labelH = 15;
+      const lx = ax - labelW / 2;
+      const ly = ay - radius - labelH - 2;
+
       ctx.fillStyle = 'rgba(11, 15, 25, 0.95)';
-      ctx.fillRect(x, y, w, h);
+      ctx.fillRect(lx, ly, labelW, labelH);
       ctx.strokeStyle = 'rgba(56, 189, 248, 0.65)';
       ctx.lineWidth = 1;
-      ctx.strokeRect(x, y, w, h);
+      ctx.strokeRect(lx, ly, labelW, labelH);
 
-      const text = badge.textContent?.trim() || '';
       ctx.fillStyle = '#38bdf8';
-      ctx.font = 'bold 11px "JetBrains Mono", monospace, sans-serif';
       ctx.textBaseline = 'middle';
-      ctx.fillText(text, x + 4, y + h / 2);
+      ctx.fillText(airport.code, lx + 4, ly + labelH / 2);
       ctx.restore();
     });
 
@@ -451,27 +663,89 @@ async function captureLeafletDomToCanvas(
     ctx.fillText(modeLabel, 35, 98);
     ctx.restore();
 
-    // Verify canvas can export to blob (no tainted canvas)
-    let canExport = false;
-    try {
-      canvas.toDataURL('image/png');
-      canExport = true;
-    } catch {
-      canExport = false;
-    }
-
-    if (canExport) {
-      const testBlob = await new Promise<Blob | null>((res) => canvas.toBlob(res, 'image/png'));
-      if (testBlob && testBlob.size > 2000) {
-        return canvas;
+    // 7. LEYENDA Y VIÑETA CROMÁTICA DE AEROLÍNEAS CON CÓDIGOS IATA
+    const airlineCounts: Record<string, number> = {};
+    routes.forEach((r) => {
+      if (r.airline && r.airline.trim()) {
+        const a = r.airline.trim();
+        airlineCounts[a] = (airlineCounts[a] || 0) + 1;
       }
-    }
-  } catch (err) {
-    console.warn('captureLeafletDomToCanvas tile capture notice:', err);
-  }
+    });
+    const uniqueAirlines = Object.entries(airlineCounts)
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([airline, count]) => ({
+        airline,
+        count,
+        iata: getAirlineIataCode(airline),
+        color: getAirlineColor(airline, customColors),
+      }));
 
-  // Fail-safe: Always generate ultra-clean high-resolution vector canvas respecting the exact current Leaflet projection and active mapMode
-  return createVectorMapCanvas(element, routes, airports, customColors, mapMode);
+    if (uniqueAirlines.length > 0) {
+      const itemsPerCol = Math.min(10, Math.max(3, Math.ceil(uniqueAirlines.length / 3)));
+      const numCols = Math.ceil(uniqueAirlines.length / itemsPerCol);
+      const colW = 220;
+      const legW = Math.min(width - 40, Math.max(320, numCols * colW + 30));
+      const legH = 38 + itemsPerCol * 24;
+      const legX = width - legW - 20;
+      const legY = height - legH - 20;
+
+      ctx.save();
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
+      ctx.fillRect(legX, legY, legW, legH);
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.55)';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(legX, legY, legW, legH);
+
+      // Legend Title
+      ctx.fillStyle = '#38bdf8';
+      ctx.font = 'bold 11px -apple-system, sans-serif';
+      ctx.fillText(`LEYENDA & VIÑETAS CROMÁTICAS (${uniqueAirlines.length} AEROLÍNEAS)`, legX + 15, legY + 22);
+
+      uniqueAirlines.forEach((item, idx) => {
+        const col = Math.floor(idx / itemsPerCol);
+        const row = idx % itemsPerCol;
+        const ix = legX + 15 + col * colW;
+        const iy = legY + 44 + row * 24;
+
+        // Colored swatch/bullet with crisp white outline
+        ctx.fillStyle = item.color;
+        ctx.beginPath();
+        if (typeof (ctx as any).roundRect === 'function') {
+          (ctx as any).roundRect(ix, iy - 10, 18, 12, 3);
+        } else {
+          ctx.rect(ix, iy - 10, 18, 12);
+        }
+        ctx.fill();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // IATA badge
+        ctx.fillStyle = 'rgba(56, 189, 248, 0.2)';
+        ctx.fillRect(ix + 24, iy - 10, 24, 12);
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.6)';
+        ctx.strokeRect(ix + 24, iy - 10, 24, 12);
+        ctx.fillStyle = '#38bdf8';
+        ctx.font = 'bold 9px "JetBrains Mono", monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(item.iata, ix + 36, iy - 4);
+
+        // Airline name and count
+        ctx.textAlign = 'left';
+        ctx.fillStyle = '#f1f5f9';
+        ctx.font = 'bold 10px -apple-system, sans-serif';
+        const displayName = item.airline.length > 18 ? item.airline.slice(0, 17) + '…' : item.airline;
+        ctx.fillText(`${displayName} (${item.count})`, ix + 54, iy - 4);
+      });
+      ctx.restore();
+    }
+
+    return canvas;
+  } catch (err) {
+    console.warn('captureLeafletDomToCanvas error:', err);
+    return null;
+  }
 }
 
 /**
@@ -1141,15 +1415,17 @@ export async function exportComparisonToImage(
       if (canvasA && canvasB) {
         const dualCanvas = document.createElement('canvas');
         const headerH = 140;
+        const legendH = 150;
         const gap = 16;
         const border = 16;
         dualCanvas.width = canvasA.width + canvasB.width + gap + (border * 2);
-        dualCanvas.height = Math.max(canvasA.height, canvasB.height) + headerH + (border * 2);
+        dualCanvas.height = Math.max(canvasA.height, canvasB.height) + headerH + legendH + (border * 2);
         const ctx = dualCanvas.getContext('2d');
         if (ctx) {
           ctx.fillStyle = '#020617';
           ctx.fillRect(0, 0, dualCanvas.width, dualCanvas.height);
 
+          // Top Header Bar
           ctx.fillStyle = '#0f172a';
           ctx.fillRect(0, 0, dualCanvas.width, headerH);
           ctx.strokeStyle = '#1e293b';
@@ -1168,17 +1444,89 @@ export async function exportComparisonToImage(
           ctx.font = 'bold 12px -apple-system, sans-serif';
           ctx.fillText('DIRECCIÓN EJECUTIVA DE TRANSPORTE Y CONTROL AERONÁUTICO • COORDINACIÓN DE CONCESIONES Y TRANSPORTE AÉREO', border + 12, 100);
 
+          // Draw Map A
           const yPos = headerH + border;
           ctx.drawImage(canvasA, border, yPos);
           ctx.strokeStyle = colorA;
           ctx.lineWidth = 3;
           ctx.strokeRect(border, yPos, canvasA.width, canvasA.height);
 
+          // Draw Map B
           const xPosB = border + canvasA.width + gap;
           ctx.drawImage(canvasB, xPosB, yPos);
           ctx.strokeStyle = colorB;
           ctx.lineWidth = 3;
           ctx.strokeRect(xPosB, yPos, canvasB.width, canvasB.height);
+
+          // Bottom Dual Comparison Legend & Viñeta Card
+          const legY = yPos + Math.max(canvasA.height, canvasB.height) + border;
+          const legW = dualCanvas.width - (border * 2);
+          ctx.fillStyle = '#0f172a';
+          ctx.fillRect(border, legY, legW, legendH - border);
+          ctx.strokeStyle = '#38bdf8';
+          ctx.lineWidth = 1.5;
+          ctx.strokeRect(border, legY, legW, legendH - border);
+
+          // Title
+          ctx.fillStyle = '#38bdf8';
+          ctx.font = 'bold 14px -apple-system, sans-serif';
+          ctx.fillText('LEYENDA Y VIÑETAS CROMÁTICAS COMPARATIVAS (CÓDIGOS IATA)', border + 20, legY + 28);
+
+          // Comparison Map A vs Map B indicator pills
+          const iataA = airlineAName === 'all' || airlineAName.includes('Todas') ? 'TODAS' : getAirlineIataCode(airlineAName);
+          const iataB = airlineBName === 'all' || airlineBName.includes('Todas') ? 'TODAS' : getAirlineIataCode(airlineBName);
+
+          // Pill A
+          ctx.fillStyle = colorA;
+          ctx.fillRect(border + 20, legY + 44, 22, 14);
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(border + 20, legY + 44, 22, 14);
+          ctx.fillStyle = '#ffffff';
+          ctx.font = 'bold 12px "JetBrains Mono", monospace';
+          ctx.fillText(`MAPA A: [${iataA}] ${airlineAName} (${routesA.length} rutas)`, border + 50, legY + 56);
+
+          // Pill B
+          const pillBX = border + Math.round(legW / 2);
+          ctx.fillStyle = colorB;
+          ctx.fillRect(pillBX, legY + 44, 22, 14);
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(pillBX, legY + 44, 22, 14);
+          ctx.fillStyle = '#ffffff';
+          ctx.font = 'bold 12px "JetBrains Mono", monospace';
+          ctx.fillText(`MAPA B: [${iataB}] ${airlineBName} (${routesB.length} rutas)`, pillBX + 30, legY + 56);
+
+          // Multi-airline chips breakdown
+          const allComparedRoutes = [...routesA, ...routesB];
+          const uniqueAirlines = Array.from(new Set(allComparedRoutes.map((r) => r.airline))).filter(Boolean);
+          if (uniqueAirlines.length > 0) {
+            const cols = 5;
+            const chipColW = (legW - 40) / cols;
+            uniqueAirlines.slice(0, 10).forEach((airline, idx) => {
+              const c = idx % cols;
+              const r = Math.floor(idx / cols);
+              const chipX = border + 20 + c * chipColW;
+              const chipY = legY + 84 + r * 22;
+              const aColor = getAirlineColor(airline, customColors);
+              const aIata = getAirlineIataCode(airline);
+
+              ctx.fillStyle = aColor;
+              ctx.fillRect(chipX, chipY - 9, 16, 10);
+              ctx.strokeStyle = '#ffffff';
+              ctx.lineWidth = 0.8;
+              ctx.strokeRect(chipX, chipY - 9, 16, 10);
+
+              ctx.fillStyle = '#38bdf8';
+              ctx.font = 'bold 10px "JetBrains Mono", monospace';
+              ctx.fillText(`[${aIata}]`, chipX + 22, chipY);
+
+              ctx.fillStyle = '#cbd5e1';
+              ctx.font = '10px -apple-system, sans-serif';
+              const label = airline.length > 16 ? airline.slice(0, 15) + '…' : airline;
+              ctx.fillText(label, chipX + 54, chipY);
+            });
+          }
 
           const blob = await new Promise<Blob | null>((res) => dualCanvas.toBlob(res, 'image/png'));
           if (blob && blob.size > 2000) {
@@ -1451,14 +1799,31 @@ export function exportComparisonToStandaloneHtml(
       return PALETTE[Math.abs(hash) % PALETTE.length];
     }
 
-    // Populate bottom color vignette
+    // Populate bottom color vignette with IATA tags
     const allAirlines = Array.from(new Set([...routesA.map(r => r.airline), ...routesB.map(r => r.airline)])).filter(Boolean);
     const chipsContainer = document.getElementById('legend-chips');
+    const IATA_MAP = ${JSON.stringify(AIRLINE_TO_IATA)};
+
+    function getIata(al) {
+      if (!al) return '';
+      const norm = al.toLowerCase().trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      for (const [k, v] of Object.entries(IATA_MAP)) {
+        if (norm === k || norm.includes(k) || k.includes(norm)) return v;
+      }
+      return al.slice(0, 2).toUpperCase();
+    }
+
     allAirlines.forEach(al => {
       const color = getColor(al);
+      const iata = getIata(al);
+      const countA = routesA.filter(r => r.airline === al).length;
+      const countB = routesB.filter(r => r.airline === al).length;
       const chip = document.createElement('div');
       chip.className = 'legend-chip';
-      chip.innerHTML = '<span class="legend-color" style="background:'+color+'"></span><span>'+al+'</span>';
+      chip.innerHTML = '<span class="legend-color" style="background:'+color+'"></span>' +
+        '<span style="background:rgba(56,189,248,0.2); color:#38bdf8; font-weight:bold; font-family:monospace; font-size:10px; padding:1px 5px; border-radius:4px; border:1px solid rgba(56,189,248,0.4);">['+iata+']</span>' +
+        '<span style="color:#f8fafc; font-weight:600;">'+al+'</span>' +
+        '<span style="color:#94a3b8; font-size:10px;">(A: '+countA+' | B: '+countB+')</span>';
       chipsContainer.appendChild(chip);
     });
 
@@ -1522,8 +1887,15 @@ export function exportComparisonToStandaloneHtml(
   const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8;' });
   const link = document.createElement('a');
   link.href = URL.createObjectURL(blob);
-  link.download = 'comparativa_rutas_aereas_mexico.html';
+  link.download = generateExportFilename({
+    prefix: 'comparativa_rutas_aereas_mexico',
+    airlineA: airlineAName,
+    airlineB: airlineBName,
+    extension: 'html',
+    isDual: true,
+  });
   link.click();
+  setTimeout(() => URL.revokeObjectURL(link.href), 4000);
 }
 
 /**
@@ -1887,7 +2259,8 @@ export function exportMapToStandaloneHtml(
   routes: FlightRoute[],
   airports: Airport[],
   title = 'Visualización de Rutas Aéreas México',
-  customColors?: Record<string, string>
+  customColors?: Record<string, string>,
+  selectedAirlines?: string[]
 ) {
   const routesDataJson = JSON.stringify(
     routes.map(r => ({
@@ -2042,14 +2415,34 @@ export function exportMapToStandaloneHtml(
       return DYNAMIC_PALETTE[Math.abs(hash) % DYNAMIC_PALETTE.length];
     }
 
-    // Populate Legend
+    // Populate Legend with IATA codes
     const uniqueAirlines = Array.from(new Set(routes.map(r => r.airline))).filter(Boolean);
     const legendEl = document.getElementById('legend-items');
+    const IATA_MAP = ${JSON.stringify(AIRLINE_TO_IATA)};
+
+    function getIata(al) {
+      if (!al) return '';
+      const norm = al.toLowerCase().trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      for (const [k, v] of Object.entries(IATA_MAP)) {
+        if (norm === k || norm.includes(k) || k.includes(norm)) return v;
+      }
+      return al.slice(0, 2).toUpperCase();
+    }
+
     uniqueAirlines.forEach(airline => {
       const col = getColor(airline);
+      const iata = getIata(airline);
+      const count = routes.filter(r => r.airline === airline).length;
       const row = document.createElement('div');
       row.className = 'legend-item';
-      row.innerHTML = '<span class="legend-color" style="background:'+col+'"></span><span>'+airline+'</span>';
+      row.style.display = 'flex';
+      row.style.alignItems = 'center';
+      row.style.gap = '8px';
+      row.style.marginBottom = '6px';
+      row.innerHTML = '<span class="legend-color" style="background:'+col+'; width:16px; height:10px; border-radius:3px; border:1px solid #fff; shrink-0;"></span>' +
+        '<span style="background:rgba(56,189,248,0.2); color:#38bdf8; font-weight:bold; font-family:monospace; font-size:10px; padding:1px 5px; border-radius:4px; border:1px solid rgba(56,189,248,0.4);">['+iata+']</span>' +
+        '<span style="color:#f8fafc; font-weight:600; font-size:11px;">'+airline+'</span>' +
+        '<span style="color:#94a3b8; font-size:10px;">('+count+')</span>';
       legendEl.appendChild(row);
     });
 
@@ -2114,6 +2507,12 @@ export function exportMapToStandaloneHtml(
   const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8;' });
   const link = document.createElement('a');
   link.href = URL.createObjectURL(blob);
-  link.download = 'mapa_rutas_aereas_mexico.html';
+  link.download = generateExportFilename({
+    prefix: 'mapa_rutas_aereas_mexico',
+    routes,
+    selectedAirlines,
+    extension: 'html',
+  });
   link.click();
+  setTimeout(() => URL.revokeObjectURL(link.href), 4000);
 }

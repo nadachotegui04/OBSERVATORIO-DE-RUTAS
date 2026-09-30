@@ -728,9 +728,205 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
                     <p className="text-[11px] text-slate-300 leading-relaxed border-t border-slate-800/80 pt-2">
                       {uniqueAnalysisMode === 'general'
-                        ? 'a) Análisis general: Muestra todos los 346 tramos consolidados clasificados por 1 sola aerolínea autorizada (177 de operador único) vs 2 o más aerolíneas autorizadas (169 compartidas). La lista de aerolíneas se oculta en el menú.'
+                        ? 'a) Análisis general: Muestra todos los 346 tramos consolidados clasificados por 1 sola aerolínea autorizada (177 de operador único) vs 2 o más aerolíneas autorizadas (169 compartidas). Puedes seleccionar cualquiera de las dos o las dos juntas para visualizarlas en el mapa.'
                         : 'b) Análisis específico: Te permite elegir aerolíneas individuales con colores personalizados y resalta rutas exclusivas de una sola aerolínea o compartidas por 2 o más aerolíneas.'}
                     </p>
+
+                    {uniqueAnalysisMode === 'general' && (
+                      <div className="mt-2.5 p-2.5 rounded-xl bg-slate-900/90 border border-cyan-500/50 space-y-2.5 shadow-md">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-black text-cyan-300 uppercase tracking-wider flex items-center gap-1.5">
+                            <Layers className="w-3.5 h-3.5 text-cyan-400" />
+                            Selección en el Mapa:
+                          </span>
+                          <span className="text-[10px] font-mono font-bold text-cyan-200 bg-slate-950 px-2 py-0.5 rounded border border-cyan-700/60">
+                            {filters.mode3GeneralShowSingle !== false && filters.mode3GeneralShowMulti !== false
+                              ? 'Las dos juntas'
+                              : filters.mode3GeneralShowSingle !== false
+                              ? '1 aerolínea'
+                              : filters.mode3GeneralShowMulti !== false
+                              ? '2+ aerolíneas'
+                              : 'Ninguna'}
+                          </span>
+                        </div>
+
+                        {/* Segmented quick selection buttons */}
+                        <div className="grid grid-cols-3 gap-1 bg-slate-950/80 p-1 rounded-lg border border-slate-800 text-[10px]">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onFilterChange({
+                                ...filters,
+                                mode3GeneralShowSingle: true,
+                                mode3GeneralShowMulti: true,
+                              })
+                            }
+                            className={`py-1.5 px-1 rounded-md font-bold transition flex items-center justify-center cursor-pointer text-center ${
+                              filters.mode3GeneralShowSingle !== false && filters.mode3GeneralShowMulti !== false
+                                ? 'bg-cyan-500 text-slate-950 font-black shadow-sm ring-1 ring-cyan-400'
+                                : 'text-slate-400 hover:text-white'
+                            }`}
+                          >
+                            Las dos juntas
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onFilterChange({
+                                ...filters,
+                                mode3GeneralShowSingle: true,
+                                mode3GeneralShowMulti: false,
+                              })
+                            }
+                            className={`py-1.5 px-1 rounded-md font-bold transition flex items-center justify-center cursor-pointer text-center ${
+                              filters.mode3GeneralShowSingle !== false && filters.mode3GeneralShowMulti === false
+                                ? 'bg-cyan-500 text-slate-950 font-black shadow-sm ring-1 ring-cyan-400'
+                                : 'text-slate-400 hover:text-white'
+                            }`}
+                          >
+                            1 aerolínea
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onFilterChange({
+                                ...filters,
+                                mode3GeneralShowSingle: false,
+                                mode3GeneralShowMulti: true,
+                              })
+                            }
+                            className={`py-1.5 px-1 rounded-md font-bold transition flex items-center justify-center cursor-pointer text-center ${
+                              filters.mode3GeneralShowSingle === false && filters.mode3GeneralShowMulti !== false
+                                ? 'bg-cyan-500 text-slate-950 font-black shadow-sm ring-1 ring-cyan-400'
+                                : 'text-slate-400 hover:text-white'
+                            }`}
+                          >
+                            2+ aerolíneas
+                          </button>
+                        </div>
+
+                        {/* Interactive toggle checkboxes / cards */}
+                        <div className="space-y-1.5">
+                          {/* Option 1: 1 aerolínea */}
+                          <div
+                            onClick={() =>
+                              onFilterChange({
+                                ...filters,
+                                mode3GeneralShowSingle: filters.mode3GeneralShowSingle === false,
+                              })
+                            }
+                            className={`flex items-center justify-between p-2 rounded-xl border transition cursor-pointer select-none ${
+                              filters.mode3GeneralShowSingle !== false
+                                ? 'bg-slate-950 border-cyan-500/80 shadow-md ring-1 ring-cyan-500/40'
+                                : 'bg-slate-950/40 border-slate-800 opacity-55 hover:opacity-90'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <input
+                                type="checkbox"
+                                checked={filters.mode3GeneralShowSingle !== false}
+                                onChange={() =>
+                                  onFilterChange({
+                                    ...filters,
+                                    mode3GeneralShowSingle: filters.mode3GeneralShowSingle === false,
+                                  })
+                                }
+                                onClick={(e) => e.stopPropagation()}
+                                className="w-4 h-4 rounded border-slate-600 bg-slate-900 text-cyan-500 focus:ring-cyan-500 cursor-pointer accent-cyan-500 shrink-0"
+                              />
+                              <div
+                                className="relative flex items-center justify-center shrink-0"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <input
+                                  type="color"
+                                  value={uniqueSingleColor}
+                                  onChange={(e) => onChangeUniqueSingleColor && onChangeUniqueSingleColor(e.target.value)}
+                                  className="w-5 h-5 rounded-full border border-white/40 cursor-pointer p-0 bg-transparent opacity-0 absolute inset-0 z-10"
+                                  title="Cambiar color para 1 aerolínea"
+                                />
+                                <span
+                                  className="w-4 h-4 rounded-full border border-white/80 shadow-sm inline-block"
+                                  style={{ backgroundColor: uniqueSingleColor }}
+                                />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="text-xs font-bold text-white leading-tight">
+                                  1 aerolínea
+                                </div>
+                                <div className="text-[9.5px] text-cyan-300">
+                                  Operador único exclusivo
+                                </div>
+                              </div>
+                            </div>
+                            <span className="font-mono text-[10px] font-black text-cyan-300 bg-slate-900 px-2 py-0.5 rounded border border-slate-800 shrink-0">
+                              177 rutas
+                            </span>
+                          </div>
+
+                          {/* Option 2: 2 o más aerolíneas */}
+                          <div
+                            onClick={() =>
+                              onFilterChange({
+                                ...filters,
+                                mode3GeneralShowMulti: filters.mode3GeneralShowMulti === false,
+                              })
+                            }
+                            className={`flex items-center justify-between p-2 rounded-xl border transition cursor-pointer select-none ${
+                              filters.mode3GeneralShowMulti !== false
+                                ? 'bg-slate-950 border-amber-500/80 shadow-md ring-1 ring-amber-500/40'
+                                : 'bg-slate-950/40 border-slate-800 opacity-55 hover:opacity-90'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <input
+                                type="checkbox"
+                                checked={filters.mode3GeneralShowMulti !== false}
+                                onChange={() =>
+                                  onFilterChange({
+                                    ...filters,
+                                    mode3GeneralShowMulti: filters.mode3GeneralShowMulti === false,
+                                  })
+                                }
+                                onClick={(e) => e.stopPropagation()}
+                                className="w-4 h-4 rounded border-slate-600 bg-slate-900 text-amber-500 focus:ring-amber-500 cursor-pointer accent-amber-500 shrink-0"
+                              />
+                              <div
+                                className="relative flex items-center justify-center shrink-0"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <input
+                                  type="color"
+                                  value={uniqueMultiColor}
+                                  onChange={(e) => onChangeUniqueMultiColor && onChangeUniqueMultiColor(e.target.value)}
+                                  className="w-5 h-5 rounded-full border border-white/40 cursor-pointer p-0 bg-transparent opacity-0 absolute inset-0 z-10"
+                                  title="Cambiar color para 2 o más aerolíneas"
+                                />
+                                <span
+                                  className="w-4 h-4 rounded-full border border-white/80 shadow-sm inline-block"
+                                  style={{ backgroundColor: uniqueMultiColor }}
+                                />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="text-xs font-bold text-white leading-tight">
+                                  2 o más aerolíneas
+                                </div>
+                                <div className="text-[9.5px] text-amber-300">
+                                  Ruta compartida / concurrente
+                                </div>
+                              </div>
+                            </div>
+                            <span className="font-mono text-[10px] font-black text-amber-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-800 shrink-0">
+                              169 rutas
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="text-[9.5px] text-slate-400 leading-tight bg-slate-950/60 p-2 rounded-lg border border-slate-800/80">
+                          ℹ️ Puedes seleccionar <strong>1 aerolínea</strong>, <strong>2 o más aerolíneas</strong> por separado, o <strong>las dos juntas</strong> para visualizarlas en el mapa.
+                        </div>
+                      </div>
+                    )}
 
                     {uniqueAnalysisMode === 'specific' && filters.selectedAirlines.length === 1 && (
                       <label className="flex items-center gap-2 pt-1 text-slate-300 cursor-pointer select-none">

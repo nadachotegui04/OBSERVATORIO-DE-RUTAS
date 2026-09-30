@@ -60,6 +60,8 @@ const INITIAL_FILTERS: FilterState = {
   searchQuery: '',
   onlyExclusiveRoutes: false,
   selectedTopN: null,
+  mode3GeneralShowSingle: true,
+  mode3GeneralShowMulti: true,
 };
 
 const DEFAULT_SAVED_MAPS: SavedMap[] = [
@@ -424,15 +426,14 @@ export default function App() {
             setAllRoutes(officialRoutes);
             setFileName('2026_08_27 Arline Routes AR.xlsx');
             setIsDemoLoaded(false);
-            publishDatasetToCloud(officialRoutes, '2026_08_27 Arline Routes AR.xlsx', false).catch(console.warn);
           }
         } else {
-          // If cloud has nothing yet, seed cloud with the official database dataset
+          // Cloud has no dataset or is offline - keep local official routes active
           const officialRoutes = sanitizeAndEnrichRoutes(officialRoutesJson as FlightRoute[]);
-          await publishDatasetToCloud(officialRoutes, '2026_08_27 Arline Routes AR.xlsx', false);
+          setAllRoutes(officialRoutes);
         }
       } catch (err) {
-        console.warn('Initial cloud sync notice:', err);
+        console.warn('Initial cloud sync notice (using local dataset):', err);
       } finally {
         if (isMounted) {
           setIsCloudSyncing(false);
@@ -780,6 +781,20 @@ export default function App() {
         }
       }
 
+      // Mode 3 General Analysis: Filter by 1 airline (operador único) vs 2 or more airlines (rutas compartidas)
+      if (mapMode === 'unique_routes' && uniqueAnalysisMode === 'general') {
+        const [a, b] = [r.originCode, r.destCode].sort();
+        const key = `${a} <-> ${b}`;
+        const totalAirlinesOnCorridor = corridorAllAirlinesMap.get(key)?.size || 1;
+        const isSingleOp = totalAirlinesOnCorridor === 1;
+
+        const showSingle = filters.mode3GeneralShowSingle !== false;
+        const showMulti = filters.mode3GeneralShowMulti !== false;
+
+        if (isSingleOp && !showSingle) return false;
+        if (!isSingleOp && !showMulti) return false;
+      }
+
       // Excel Sheets
       if (
         filters.selectedSheets &&
@@ -836,7 +851,7 @@ export default function App() {
 
       return true;
     });
-  }, [allRoutes, filters, selectedHubCode, corridorAllAirlinesMap, top15Airports]);
+  }, [allRoutes, filters, selectedHubCode, corridorAllAirlinesMap, top15Airports, mapMode, uniqueAnalysisMode]);
 
   // Unique Airports for filtered routes (if Top N is active in airports mode, display strictly the Top N airports)
   const filteredAirports = useMemo(() => {
@@ -1023,6 +1038,29 @@ export default function App() {
       ...prev,
       selectedOrigins: [airportCode],
       selectedDestinations: [],
+    }));
+  };
+
+  // Mode 3 General Analysis Airline Quantity Filter Handlers (1 aerolínea vs 2 o más aerolíneas)
+  const handleToggleMode3GeneralSingle = () => {
+    setFilters((prev) => ({
+      ...prev,
+      mode3GeneralShowSingle: prev.mode3GeneralShowSingle === false,
+    }));
+  };
+
+  const handleToggleMode3GeneralMulti = () => {
+    setFilters((prev) => ({
+      ...prev,
+      mode3GeneralShowMulti: prev.mode3GeneralShowMulti === false,
+    }));
+  };
+
+  const handleSetMode3GeneralFilter = (showSingle: boolean, showMulti: boolean) => {
+    setFilters((prev) => ({
+      ...prev,
+      mode3GeneralShowSingle: showSingle,
+      mode3GeneralShowMulti: showMulti,
     }));
   };
 
@@ -1263,6 +1301,11 @@ export default function App() {
                 onChangeUniqueSingleColor={setUniqueSingleColor}
                 uniqueMultiColor={uniqueMultiColor}
                 onChangeUniqueMultiColor={setUniqueMultiColor}
+                mode3GeneralShowSingle={filters.mode3GeneralShowSingle !== false}
+                onToggleMode3GeneralSingle={handleToggleMode3GeneralSingle}
+                mode3GeneralShowMulti={filters.mode3GeneralShowMulti !== false}
+                onToggleMode3GeneralMulti={handleToggleMode3GeneralMulti}
+                onSetMode3GeneralFilter={handleSetMode3GeneralFilter}
                 availableAirlines={availableAirlines}
                 selectedAirlines={filters.selectedAirlines}
                 onToggleAirline={handleToggleAirline}
@@ -1348,6 +1391,7 @@ export default function App() {
         activeMapMode={mapMode}
         mapElementId={activeView === 'compare' ? 'compare-view-container' : 'main-flight-map'}
         customAirlineColors={customAirlineColors}
+        selectedAirlines={filters.selectedAirlines}
         isAdmin={isAdmin}
       />
 

@@ -127,6 +127,8 @@ export interface FilterState {
   mode1AnalysisMode?: 'standard' | 'specific';
   mode1SpecificAirline?: string;
   mode1SpecificAirlineColor?: string;
+  mode3GeneralShowSingle?: boolean;
+  mode3GeneralShowMulti?: boolean;
 }
 
 export interface SavedMap {

@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState, useMemo } from 'react';
 import L from 'leaflet';
 import { FlightRoute, Airport, MapVisualizationMode, UniqueRouteCorridor, UniqueRoutesAnalysisMode } from '../types';
 import { generateGreatCircleArc } from '../utils/geodesic';
-import { exportMapToImage, MEXICO_MAINLAND_OUTLINE, BAJA_PENINSULA_OUTLINE } from '../utils/exporter';
+import { exportMapToImage, generateExportFilename, MEXICO_MAINLAND_OUTLINE, BAJA_PENINSULA_OUTLINE } from '../utils/exporter';
 import { getUniqueRouteCorridors, getAirportConnections } from '../utils/dataParser';
 import { resolveAirport, findAirportByCoordinates, isCoordinateLike } from '../data/mexicoDemoData';
 import mexicoStatesData from '../data/mexicoStates.json';
@@ -67,6 +67,11 @@ interface FlightMapProps {
   onChangeUniqueSingleColor?: (color: string) => void;
   uniqueMultiColor?: string;
   onChangeUniqueMultiColor?: (color: string) => void;
+  mode3GeneralShowSingle?: boolean;
+  onToggleMode3GeneralSingle?: () => void;
+  mode3GeneralShowMulti?: boolean;
+  onToggleMode3GeneralMulti?: () => void;
+  onSetMode3GeneralFilter?: (showSingle: boolean, showMulti: boolean) => void;
   availableAirlines?: string[];
   selectedAirlines?: string[];
   onToggleAirline?: (airline: string) => void;
@@ -241,6 +246,11 @@ export const FlightMap: React.FC<FlightMapProps> = ({
   onChangeUniqueSingleColor,
   uniqueMultiColor = '#f59e0b',
   onChangeUniqueMultiColor,
+  mode3GeneralShowSingle = true,
+  onToggleMode3GeneralSingle,
+  mode3GeneralShowMulti = true,
+  onToggleMode3GeneralMulti,
+  onSetMode3GeneralFilter,
   availableAirlines = [],
   selectedAirlines = [],
   onToggleAirline,
@@ -727,14 +737,14 @@ export const FlightMap: React.FC<FlightMapProps> = ({
     const tileLayer = L.tileLayer(activeTileConfig.url, {
       attribution: activeTileConfig.attribution,
       maxZoom: activeTileConfig.maxZoom,
-      crossOrigin: true,
+      crossOrigin: 'anonymous',
     }).addTo(map);
 
     // Add Reference Layer if available (e.g. Esri Dark Reference for political borders and labels)
     if (activeTileConfig.referenceUrl) {
       const refLayer = L.tileLayer(activeTileConfig.referenceUrl, {
         maxZoom: activeTileConfig.maxZoom,
-        crossOrigin: true,
+        crossOrigin: 'anonymous',
       }).addTo(map);
       referenceTileLayerRef.current = refLayer;
     }
@@ -756,6 +766,7 @@ export const FlightMap: React.FC<FlightMapProps> = ({
     if (mapContainerRef.current) {
       (mapContainerRef.current as any)._leaflet_map = map;
     }
+    (window as any)[`__leaflet_map_${id}`] = map;
 
     map.on('click', () => {
       activeOpenPopupCodeRef.current = null;
@@ -785,6 +796,7 @@ export const FlightMap: React.FC<FlightMapProps> = ({
     }
 
     return () => {
+      delete (window as any)[`__leaflet_map_${id}`];
       resizeObserver.disconnect();
       map.remove();
       mapInstanceRef.current = null;
@@ -1043,6 +1055,12 @@ export const FlightMap: React.FC<FlightMapProps> = ({
           const singleOpAirline = isSingleOp ? corridor.airlines[0].airline : null;
           const isMultiCarrier = corridor.airlines.length > 1;
 
+          // In Mode 3 General Analysis, respect single and multi airline toggles
+          if (uniqueAnalysisMode === 'general') {
+            if (isSingleOp && mode3GeneralShowSingle === false) return;
+            if (isMultiCarrier && mode3GeneralShowMulti === false) return;
+          }
+
           let strokeColor = uniqueSingleColor || '#06b6d4';
           if (uniqueAnalysisMode === 'general') {
             // Option a) General analysis: 1 sole airline -> uniqueSingleColor; 2+ airlines -> uniqueMultiColor
@@ -1246,7 +1264,7 @@ export const FlightMap: React.FC<FlightMapProps> = ({
         let shadowGlow = '8px #06b6d4';
 
         if (isMode1) {
-          if (isComparePane && compareAirlineColor && compareAirlineColor !== '#06b6d4' && compareAirlineColor !== '#c084fc') {
+          if (isComparePane && compareAirlineColor) {
             pinColor = compareAirlineColor;
             shadowGlow = `10px ${compareAirlineColor}`;
             radius = isSelectedOrigin ? 10 : 8;
@@ -1535,7 +1553,13 @@ export const FlightMap: React.FC<FlightMapProps> = ({
   const handleQuickCapturePNG = async () => {
     try {
       setIsCapturing(true);
-      await exportMapToImage(id, `mapa_rutas_mexico_${mapMode}_${Date.now()}.png`, routes, airports, customAirlineColors, mapMode);
+      const filename = generateExportFilename({
+        prefix: `mapa_rutas_mexico_${mapMode}`,
+        routes,
+        selectedAirlines,
+        extension: 'png',
+      });
+      await exportMapToImage(id, filename, routes, airports, customAirlineColors, mapMode);
       setCaptureSuccess(true);
       setTimeout(() => setCaptureSuccess(false), 2500);
     } catch (err: any) {
@@ -2164,64 +2188,147 @@ export const FlightMap: React.FC<FlightMapProps> = ({
                   {uniqueAnalysisMode === 'general' ? (
                     <div className="space-y-2 py-1 overflow-y-auto">
                       <div className="text-[10px] text-slate-400 leading-snug">
-                        En el <strong>Análisis general</strong> no se muestran aerolíneas individuales. Todos los {uniqueCorridors.length || 346} tramos consolidados se diferencian únicamente por si cuentan con 1 sola aerolínea autorizada ({singleCorridorsCount}) o 2 o más ({multiCorridorsCount}):
+                        En el <strong>Análisis general</strong> clasifica los {uniqueCorridors.length || 346} tramos consolidados por <strong>1 aerolínea autorizada</strong> ({singleCorridorsCount}) vs <strong>2 o más aerolíneas</strong> ({multiCorridorsCount}). Puedes seleccionar cualquiera de las dos o las dos juntas:
                       </div>
 
-                      {/* Color 1: 1 sola aerolínea */}
-                      <div className="flex items-center justify-between p-2 rounded-xl bg-slate-950/80 border border-slate-800 hover:border-slate-700 transition">
-                        <div className="flex items-center gap-2.5">
-                          <div className="relative flex items-center justify-center shrink-0">
+                      {/* Quick Filter Selection Segmented Buttons */}
+                      <div className="grid grid-cols-3 gap-1 bg-slate-950/80 p-1 rounded-xl border border-slate-800 text-[10px]">
+                        <button
+                          type="button"
+                          onClick={() => onSetMode3GeneralFilter ? onSetMode3GeneralFilter(true, true) : null}
+                          className={`py-1.5 px-1 rounded-lg font-bold transition flex items-center justify-center cursor-pointer text-center ${
+                            mode3GeneralShowSingle !== false && mode3GeneralShowMulti !== false
+                              ? 'bg-cyan-500 text-slate-950 font-black shadow-sm ring-1 ring-cyan-400'
+                              : 'text-slate-400 hover:text-white hover:bg-slate-900'
+                          }`}
+                          title="Visualizar ambas juntas en el mapa"
+                        >
+                          Las dos juntas
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onSetMode3GeneralFilter ? onSetMode3GeneralFilter(true, false) : null}
+                          className={`py-1.5 px-1 rounded-lg font-bold transition flex items-center justify-center cursor-pointer text-center ${
+                            mode3GeneralShowSingle !== false && mode3GeneralShowMulti === false
+                              ? 'bg-cyan-500 text-slate-950 font-black shadow-sm ring-1 ring-cyan-400'
+                              : 'text-slate-400 hover:text-white hover:bg-slate-900'
+                          }`}
+                          title="Visualizar solo rutas de 1 aerolínea en el mapa"
+                        >
+                          1 aerolínea
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onSetMode3GeneralFilter ? onSetMode3GeneralFilter(false, true) : null}
+                          className={`py-1.5 px-1 rounded-lg font-bold transition flex items-center justify-center cursor-pointer text-center ${
+                            mode3GeneralShowSingle === false && mode3GeneralShowMulti !== false
+                              ? 'bg-cyan-500 text-slate-950 font-black shadow-sm ring-1 ring-cyan-400'
+                              : 'text-slate-400 hover:text-white hover:bg-slate-900'
+                          }`}
+                          title="Visualizar solo rutas de 2 o más aerolíneas en el mapa"
+                        >
+                          2+ aerolíneas
+                        </button>
+                      </div>
+
+                      {/* Option 1: 1 sola aerolínea (Operador único) */}
+                      <div
+                        onClick={() => onToggleMode3GeneralSingle && onToggleMode3GeneralSingle()}
+                        className={`flex items-center justify-between p-2 rounded-xl border transition cursor-pointer select-none ${
+                          mode3GeneralShowSingle !== false
+                            ? 'bg-slate-950/90 border-cyan-500/80 shadow-md ring-1 ring-cyan-500/40'
+                            : 'bg-slate-950/40 border-slate-850 opacity-50 hover:opacity-85'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <label className="flex items-center cursor-pointer shrink-0" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              checked={mode3GeneralShowSingle !== false}
+                              onChange={() => onToggleMode3GeneralSingle && onToggleMode3GeneralSingle()}
+                              className="w-4 h-4 rounded border-slate-600 bg-slate-900 text-cyan-500 focus:ring-cyan-500 cursor-pointer accent-cyan-500"
+                              title={mode3GeneralShowSingle !== false ? 'Ocultar rutas de 1 aerolínea' : 'Mostrar rutas de 1 aerolínea'}
+                            />
+                          </label>
+
+                          <div className="relative flex items-center justify-center shrink-0" onClick={(e) => e.stopPropagation()}>
                             <input
                               type="color"
                               value={uniqueSingleColor}
                               onChange={(e) => onChangeUniqueSingleColor && onChangeUniqueSingleColor(e.target.value)}
-                              className="w-6 h-6 rounded-full border border-white/40 cursor-pointer p-0 bg-transparent opacity-0 absolute inset-0 z-10"
-                              title="Click para cambiar color para 1 sola aerolínea"
+                              className="w-5 h-5 rounded-full border border-white/40 cursor-pointer p-0 bg-transparent opacity-0 absolute inset-0 z-10"
+                              title="Click para cambiar color para 1 aerolínea"
                             />
                             <span
-                              className="w-5 h-5 rounded-full border-2 border-white/70 shadow-sm"
+                              className="w-4 h-4 rounded-full border-2 border-white/80 shadow-sm inline-block"
                               style={{ backgroundColor: uniqueSingleColor }}
                             />
                           </div>
-                          <div>
-                            <div className="text-xs font-bold text-white">1 Sola Aerolínea</div>
-                            <div className="text-[10px] text-cyan-300">Operador único exclusivo</div>
+                          <div className="min-w-0">
+                            <div className="text-xs font-bold text-white leading-tight">1 Aerolínea</div>
+                            <div className="text-[9.5px] text-cyan-300">Operador único exclusivo</div>
                           </div>
                         </div>
-                        <span className="font-mono text-xs font-bold text-cyan-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
+                        <span className="font-mono text-xs font-bold text-cyan-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-800 shrink-0">
                           {singleCorridorsCount} rutas
                         </span>
                       </div>
 
-                      {/* Color 2: 2 o más aerolíneas */}
-                      <div className="flex items-center justify-between p-2 rounded-xl bg-slate-950/80 border border-slate-800 hover:border-slate-700 transition">
-                        <div className="flex items-center gap-2.5">
-                          <div className="relative flex items-center justify-center shrink-0">
+                      {/* Option 2: 2 o más aerolíneas */}
+                      <div
+                        onClick={() => onToggleMode3GeneralMulti && onToggleMode3GeneralMulti()}
+                        className={`flex items-center justify-between p-2 rounded-xl border transition cursor-pointer select-none ${
+                          mode3GeneralShowMulti !== false
+                            ? 'bg-slate-950/90 border-amber-500/80 shadow-md ring-1 ring-amber-500/40'
+                            : 'bg-slate-950/40 border-slate-850 opacity-50 hover:opacity-85'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <label className="flex items-center cursor-pointer shrink-0" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              checked={mode3GeneralShowMulti !== false}
+                              onChange={() => onToggleMode3GeneralMulti && onToggleMode3GeneralMulti()}
+                              className="w-4 h-4 rounded border-slate-600 bg-slate-900 text-amber-500 focus:ring-amber-500 cursor-pointer accent-amber-500"
+                              title={mode3GeneralShowMulti !== false ? 'Ocultar rutas de 2 o más aerolíneas' : 'Mostrar rutas de 2 o más aerolíneas'}
+                            />
+                          </label>
+
+                          <div className="relative flex items-center justify-center shrink-0" onClick={(e) => e.stopPropagation()}>
                             <input
                               type="color"
                               value={uniqueMultiColor}
                               onChange={(e) => onChangeUniqueMultiColor && onChangeUniqueMultiColor(e.target.value)}
-                              className="w-6 h-6 rounded-full border border-white/40 cursor-pointer p-0 bg-transparent opacity-0 absolute inset-0 z-10"
+                              className="w-5 h-5 rounded-full border border-white/40 cursor-pointer p-0 bg-transparent opacity-0 absolute inset-0 z-10"
                               title="Click para cambiar color para 2 o más aerolíneas"
                             />
                             <span
-                              className="w-5 h-5 rounded-full border-2 border-white/70 shadow-sm"
+                              className="w-4 h-4 rounded-full border-2 border-white/80 shadow-sm inline-block"
                               style={{ backgroundColor: uniqueMultiColor }}
                             />
                           </div>
-                          <div>
-                            <div className="text-xs font-bold text-white">2 o Más Aerolíneas</div>
-                            <div className="text-[10px] text-amber-300">Ruta compartida / concurrente</div>
+                          <div className="min-w-0">
+                            <div className="text-xs font-bold text-white leading-tight">2 o Más Aerolíneas</div>
+                            <div className="text-[9.5px] text-amber-300">Ruta compartida / concurrente</div>
                           </div>
                         </div>
-                        <span className="font-mono text-xs font-bold text-amber-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
+                        <span className="font-mono text-xs font-bold text-amber-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-800 shrink-0">
                           {multiCorridorsCount} rutas
                         </span>
                       </div>
 
-                      <div className="p-2 rounded-lg bg-slate-950/60 border border-slate-800 text-[10px] text-slate-400 flex items-center justify-between">
-                        <span>Total de tramos consolidados:</span>
-                        <span className="font-mono font-bold text-white">{uniqueCorridors.length}</span>
+                      {/* Summary footer */}
+                      <div className="p-2 rounded-xl bg-slate-950/70 border border-slate-800 text-[10px] text-slate-300 flex items-center justify-between">
+                        <span>En pantalla:</span>
+                        <span className="font-mono font-bold text-cyan-300 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
+                          {mode3GeneralShowSingle !== false && mode3GeneralShowMulti !== false
+                            ? `${uniqueCorridors.length} rutas (ambas juntas)`
+                            : mode3GeneralShowSingle !== false
+                            ? `${uniqueCorridors.length} rutas (solo 1 aerolínea)`
+                            : mode3GeneralShowMulti !== false
+                            ? `${uniqueCorridors.length} rutas (solo 2+ aerolíneas)`
+                            : '0 rutas seleccionadas'}
+                        </span>
                       </div>
                     </div>
                   ) : (
