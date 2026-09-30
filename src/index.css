@@ -124,3 +124,12 @@
   background: rgba(148, 163, 184, 0.7);
 }
 
+/* Golden Shared Routes Subtle & Crisp Clean Style */
+.gold-route-glow {
+  display: none !important;
+}
+
+.gold-route-main {
+  /* Clean, crisp vector stroke without blurry drop-shadow */
+}
+

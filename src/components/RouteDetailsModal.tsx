@@ -117,13 +117,9 @@ export const RouteDetailsModal: React.FC<RouteDetailsModalProps> = ({
                   {cleanOriginCode} ➔ {cleanDestCode}
                 </h3>
                 <span
-                  className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                    isUniqueMode
-                      ? 'bg-amber-950 text-amber-300 border-amber-800'
-                      : 'bg-cyan-950 text-cyan-400 border-cyan-800'
-                  }`}
+                  className="text-[10px] font-bold px-2.5 py-0.5 rounded-full border bg-cyan-950 text-cyan-300 border-cyan-700"
                 >
-                  {isUniqueMode ? 'Vis. 3: Ruta Única' : 'Vis. 2: Red por Aerolínea'}
+                  Rutas Autorizadas
                 </span>
                 <span className="text-[10px] bg-slate-800 text-slate-300 font-semibold px-2 py-0.5 rounded-full border border-slate-700">
                   {route.flightType}

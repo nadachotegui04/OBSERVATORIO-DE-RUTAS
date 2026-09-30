@@ -587,7 +587,19 @@ export const FlightMap: React.FC<FlightMapProps> = ({
     return getUniqueRouteCorridors(baseRoutesForAirlines);
   }, [baseRoutesForAirlines]);
 
-  // Corridor airlines set map for Mode 2 to identify exclusive vs shared corridors
+  // Master corridor airlines set map for identifying shared (2+ airlines) vs exclusive corridors
+  const masterCorridorAirlinesMap = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    baseRoutesForAirlines.forEach(r => {
+      const [c1, c2] = [r.originCode, r.destCode].sort();
+      const key = `${c1} <-> ${c2}`;
+      if (!map.has(key)) map.set(key, new Set());
+      map.get(key)!.add(r.airline.trim().toLowerCase());
+    });
+    return map;
+  }, [baseRoutesForAirlines]);
+
+  // Corridor airlines set map for active routes
   const corridorAirlinesSetMap = useMemo(() => {
     const map = new Map<string, Set<string>>();
     routes.forEach(r => {
@@ -607,6 +619,15 @@ export const FlightMap: React.FC<FlightMapProps> = ({
   const multiCorridorsCount = useMemo(() => {
     return baseUniqueCorridors.filter(c => c.airlines.length > 1).length;
   }, [baseUniqueCorridors]);
+
+  // Count of shared routes currently in active routes
+  const specificSharedRoutesCount = useMemo(() => {
+    return routes.filter(r => {
+      const [c1, c2] = [r.originCode, r.destCode].sort();
+      const key = `${c1} <-> ${c2}`;
+      return (masterCorridorAirlinesMap.get(key)?.size || 1) >= 2;
+    }).length;
+  }, [routes, masterCorridorAirlinesMap]);
 
   // Mode 3: Exclusive airlines list that retains all airlines even when unselected
   const exclusiveAirlinesCount = useMemo(() => {
@@ -871,7 +892,7 @@ export const FlightMap: React.FC<FlightMapProps> = ({
     }
 
     // ==========================================
-    // MODE 2: VISUALIZACIÓN DE RUTAS POR AEROLÍNEA
+    // MODO COMBINADO: RUTAS ÚNICAS (ANÁLISIS GENERAL Y ESPECÍFICO)
     // ==========================================
     interface Mode2RouteEntry {
       originCode: string;
@@ -884,164 +905,11 @@ export const FlightMap: React.FC<FlightMapProps> = ({
     }
     const mode2RouteEntries: Mode2RouteEntry[] = [];
 
-    if (mapMode === 'routes_by_airline') {
-      if (showFlightArcs) {
-        // If an airport is selected in Mode 2, only render its connected routes
-        const routesToRender = mode2SelectedAirport
-          ? routes.filter(r => r.originCode === mode2SelectedAirport || r.destCode === mode2SelectedAirport)
-          : routes;
-
-        routesToRender.forEach(route => {
-          const arcPoints = generateGreatCircleArc(
-            [route.originLat, route.originLng],
-            [route.destLat, route.destLng],
-            35,
-            arcCurvature
-          );
-
-          let strokeColor = getAirlineColor(route.airline, customAirlineColors);
-          if (colorScheme === 'cyan') {
-            strokeColor = '#06b6d4';
-          } else if (colorScheme === 'density') {
-            strokeColor = route.flightsCount > 2000 ? '#f43f5e' : route.flightsCount > 1000 ? '#eab308' : '#06b6d4';
-          } else if (colorScheme === 'traffic') {
-            strokeColor = route.passengers > 300000 ? '#ec4899' : route.passengers > 150000 ? '#3b82f6' : '#10b981';
-          }
-
-          const isSelected = selectedRouteId === route.id;
-          const baseWeight = Math.min(6, Math.max(1.8, route.flightsCount / 500));
-          const lineWeight = isSelected ? baseWeight + 3 : mode2SelectedAirport ? baseWeight + 1.5 : baseWeight;
-          const lineOpacity = isSelected ? 1 : mode2SelectedAirport ? 0.95 : 0.72;
-
-          const polyline = L.polyline(arcPoints, {
-            color: isSelected ? '#ffffff' : strokeColor,
-            weight: lineWeight,
-            opacity: lineOpacity,
-            dashArray: animateFlow ? '6, 8' : undefined,
-            lineCap: 'round',
-            lineJoin: 'round',
-          });
-
-          // Interactive Popup displaying airline and authorization date
-          const popupHtml = `
-            <div class="p-1 text-slate-100 min-w-[220px]">
-              <div class="flex items-center justify-between gap-2 border-b border-slate-700 pb-2 mb-2">
-                <span class="text-xs font-mono font-bold text-cyan-400 bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-800">
-                  ${route.originCode} ➔ ${route.destCode}
-                </span>
-                <span class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">${route.flightType}</span>
-              </div>
-              <div class="text-xs font-medium text-slate-200 mb-1">
-                ${route.originName} <span class="text-slate-400">➔</span> ${route.destName}
-              </div>
-              <div class="grid grid-cols-2 gap-x-3 gap-y-1.5 text-[11px] mt-2 pt-2 border-t border-slate-800">
-                <div>
-                  <span class="text-slate-400 block text-[10px]">Aerolínea</span>
-                  <span class="font-bold text-slate-100" style="color:${strokeColor}">${route.airline}</span>
-                </div>
-                <div>
-                  <span class="text-slate-400 block text-[10px]">Fecha de Autorización</span>
-                  <span class="font-bold text-emerald-400">${route.authorizationDate || 'Registrada'}</span>
-                </div>
-                <div>
-                  <span class="text-slate-400 block text-[10px]">Distancia</span>
-                  <span class="font-semibold text-slate-200">${Math.round(route.distanceKm).toLocaleString()} km</span>
-                </div>
-              </div>
-              <div class="mt-2 text-[10px] text-cyan-400 italic">
-                * Haz clic en la ruta para ver todas las aerolíneas que la operan
-              </div>
-            </div>
-          `;
-
-          polyline.bindPopup(popupHtml, { closeButton: true, autoPan: true });
-
-          polyline.on('mouseover', () => {
-            if (!isSelected) {
-              polyline.setStyle({
-                weight: lineWeight + 2.5,
-                opacity: 1,
-                color: '#38bdf8',
-              });
-            }
-          });
-
-          polyline.on('mouseout', () => {
-            if (!isSelected) {
-              polyline.setStyle({
-                weight: lineWeight,
-                opacity: lineOpacity,
-                color: strokeColor,
-              });
-            }
-          });
-
-          polyline.on('click', () => {
-            if (onSelectRouteRef.current) onSelectRouteRef.current(route);
-          });
-
-          mode2RouteEntries.push({
-            originCode: route.originCode,
-            destCode: route.destCode,
-            polyline,
-            strokeColor: isSelected ? '#ffffff' : strokeColor,
-            baseWeight: lineWeight,
-            baseOpacity: lineOpacity,
-            isSelected,
-          });
-
-          routesLayerGroupRef.current?.addLayer(polyline);
-        });
-      }
-    }
-
-    // Helper to dynamically filter routes in Mode 2 on airport hover / popup
-    let activeMode2PopupAirport: string | null = null;
-    let activeMode2HoveredAirport: string | null = null;
-
-    const applyMode2AirportFilter = (targetCode: string | null, alternateCode?: string) => {
-      if (!routesLayerGroupRef.current || mapMode !== 'routes_by_airline') return;
-      if (!targetCode) {
-        mode2RouteEntries.forEach((entry) => {
-          if (!routesLayerGroupRef.current?.hasLayer(entry.polyline)) {
-            routesLayerGroupRef.current?.addLayer(entry.polyline);
-          }
-          entry.polyline.setStyle({
-            opacity: entry.baseOpacity,
-            weight: entry.baseWeight,
-            color: entry.strokeColor,
-          });
-        });
-        return;
-      }
-
-      const matchCodes = new Set([targetCode, alternateCode].filter(Boolean) as string[]);
-
-      mode2RouteEntries.forEach((entry) => {
-        const isConnected = matchCodes.has(entry.originCode) || matchCodes.has(entry.destCode);
-        if (isConnected) {
-          if (!routesLayerGroupRef.current?.hasLayer(entry.polyline)) {
-            routesLayerGroupRef.current?.addLayer(entry.polyline);
-          }
-          entry.polyline.setStyle({
-            opacity: 0.96,
-            weight: Math.max(entry.baseWeight + 1.2, 3),
-            color: entry.strokeColor,
-          });
-          entry.polyline.bringToFront();
-        } else {
-          if (routesLayerGroupRef.current?.hasLayer(entry.polyline)) {
-            routesLayerGroupRef.current?.removeLayer(entry.polyline);
-          }
-        }
-      });
-    };
-
-    // ==========================================
-    // MODE 3: VISUALIZACIÓN DE RUTAS ÚNICAS DESDUPLICADAS
-    // ==========================================
-    if (mapMode === 'unique_routes') {
-      if (showFlightArcs) {
+    if ((mapMode === 'unique_routes' || mapMode === 'routes_by_airline') && showFlightArcs) {
+      if (uniqueAnalysisMode === 'general') {
+        // ==========================================
+        // SUBMODO A: ANÁLISIS GENERAL (346 RUTAS CONSOLIDADAS)
+        // ==========================================
         uniqueCorridors.forEach(corridor => {
           const arcPoints = generateGreatCircleArc(
             [corridor.originLat, corridor.originLng],
@@ -1050,45 +918,29 @@ export const FlightMap: React.FC<FlightMapProps> = ({
             arcCurvature
           );
 
-          // Corridor styling based on analysis mode (General vs Específico):
           const isSingleOp = corridor.airlines.length === 1;
           const singleOpAirline = isSingleOp ? corridor.airlines[0].airline : null;
           const isMultiCarrier = corridor.airlines.length > 1;
 
-          // In Mode 3 General Analysis, respect single and multi airline toggles
-          if (uniqueAnalysisMode === 'general') {
-            if (isSingleOp && mode3GeneralShowSingle === false) return;
-            if (isMultiCarrier && mode3GeneralShowMulti === false) return;
-          }
+          // In General Analysis, respect single and multi airline toggles
+          if (isSingleOp && mode3GeneralShowSingle === false) return;
+          if (isMultiCarrier && mode3GeneralShowMulti === false) return;
 
-          let strokeColor = uniqueSingleColor || '#06b6d4';
-          if (uniqueAnalysisMode === 'general') {
-            // Option a) General analysis: 1 sole airline -> uniqueSingleColor; 2+ airlines -> uniqueMultiColor
-            strokeColor = isSingleOp ? (uniqueSingleColor || '#06b6d4') : (uniqueMultiColor || '#f59e0b');
-          } else {
-            // Option b) Specific analysis: 1 sole airline -> airline's specific color; 2+ airlines -> uniqueMultiColor
-            if (isSingleOp && singleOpAirline) {
-              strokeColor = getAirlineColor(singleOpAirline, customAirlineColors);
-            } else {
-              strokeColor = uniqueMultiColor || '#f59e0b';
-            }
-          }
-          const baseWeight = Math.min(6.5, Math.max(2.4, corridor.totalFlights / 600));
+          // 1 sole airline -> uniqueSingleColor; 2+ airlines -> uniqueMultiColor
+          const strokeColor = isSingleOp ? (uniqueSingleColor || '#06b6d4') : (uniqueMultiColor || '#f59e0b');
+          const baseWeight = Math.min(5.5, Math.max(2.2, corridor.totalFlights / 600));
 
           const polyline = L.polyline(arcPoints, {
             color: strokeColor,
-            weight: baseWeight,
-            opacity: 0.86,
+            weight: isMultiCarrier ? baseWeight + 0.6 : baseWeight,
+            opacity: 0.88,
             dashArray: animateFlow ? '6, 8' : undefined,
             lineCap: 'round',
             lineJoin: 'round',
           });
 
-          // Popup for Unique Corridor (Mode 3: Rutas Únicas)
-          const isSingleCarrierView = Boolean(singleOpAirline);
-          const badgeTitle = uniqueAnalysisMode === 'general'
-            ? (isSingleOp ? '1 Sola Aerolínea' : '2+ Aerolíneas Autorizadas')
-            : (isSingleCarrierView ? `Ruta Única: ${singleOpAirline}` : 'Ruta Compartida (2+)');
+          // Popup for Unique Corridor (Modo: Rutas Únicas - Análisis General)
+          const badgeTitle = isSingleOp ? '1 Sola Aerolínea' : '2+ Aerolíneas Autorizadas';
           const popupHtml = `
             <div class="p-1.5 text-slate-100 min-w-[280px]">
               <div class="flex items-center justify-between gap-2 border-b border-slate-700 pb-1.5 mb-1.5">
@@ -1103,7 +955,7 @@ export const FlightMap: React.FC<FlightMapProps> = ({
                 ${corridor.originName} ⇄ ${corridor.destName}
               </div>
 
-              ${isSingleCarrierView ? `
+              ${isSingleOp ? `
                 <div class="p-2 mb-2 rounded-lg bg-slate-950 border border-slate-800 text-[11px] space-y-1">
                   <div class="flex items-center justify-between">
                     <span class="text-slate-400">Aerolínea Autorizada:</span>
@@ -1151,6 +1003,9 @@ export const FlightMap: React.FC<FlightMapProps> = ({
                   <span class="font-bold text-slate-200 font-mono text-xs">${Math.round(corridor.distanceKm).toLocaleString()} km</span>
                 </div>
               </div>
+              <div class="mt-2 text-[10px] text-cyan-400 italic">
+                * Haz clic en la ruta para ver el desglose en la pestaña de detalles
+              </div>
             </div>
           `;
 
@@ -1167,16 +1022,16 @@ export const FlightMap: React.FC<FlightMapProps> = ({
           polyline.on('mouseout', () => {
             polyline.setStyle({
               weight: baseWeight,
-              opacity: 0.82,
+              opacity: 0.86,
               color: strokeColor,
             });
           });
 
           polyline.on('click', () => {
             if (onSelectRouteRef.current) {
-              // Construct or match first route for details modal
-              const matchedRoute = routes.find(
-                r => r.originCode === corridor.originCode && r.destCode === corridor.destCode
+              const matchedRoute = (allRoutes && allRoutes.length > 0 ? allRoutes : routes).find(
+                r => (r.originCode === corridor.originCode && r.destCode === corridor.destCode) ||
+                     (r.originCode === corridor.destCode && r.destCode === corridor.originCode)
               );
               if (matchedRoute) {
                 onSelectRouteRef.current(matchedRoute);
@@ -1186,8 +1041,181 @@ export const FlightMap: React.FC<FlightMapProps> = ({
 
           routesLayerGroupRef.current?.addLayer(polyline);
         });
+      } else {
+        // ==========================================
+        // SUBMODO B: ANÁLISIS ESPECÍFICO (655 RUTAS AUTORIZADAS, 13 AEROLÍNEAS)
+        // Rutas compartidas en DORADO (personalizable), rutas exclusivas por aerolínea.
+        // Sujeto a los filtros establecidos de selección de aerolíneas.
+        // ==========================================
+        const routesToRender = mode2SelectedAirport
+          ? routes.filter(r => r.originCode === mode2SelectedAirport || r.destCode === mode2SelectedAirport)
+          : routes;
+
+        routesToRender.forEach(route => {
+          const arcPoints = generateGreatCircleArc(
+            [route.originLat, route.originLng],
+            [route.destLat, route.destLng],
+            35,
+            arcCurvature
+          );
+
+          const [c1, c2] = [route.originCode, route.destCode].sort();
+          const corridorKey = `${c1} <-> ${c2}`;
+          const corridorAirlines = masterCorridorAirlinesMap.get(corridorKey) || new Set([route.airline.toLowerCase()]);
+          const isShared = corridorAirlines.size >= 2;
+
+          // Rutas compartidas se marcan con color dorado claro y sutil (personalizable con uniqueMultiColor)
+          // Las demás rutas con colores propios de acuerdo a cada aerolínea
+          const goldColor = uniqueMultiColor || '#fbbf24';
+          let strokeColor = isShared
+            ? goldColor
+            : getAirlineColor(route.airline, customAirlineColors);
+
+          if (colorScheme === 'cyan') {
+            strokeColor = '#06b6d4';
+          }
+
+          const isSelected = selectedRouteId === route.id;
+          const baseWeight = Math.min(3.8, Math.max(1.8, route.flightsCount / 700));
+          const lineWeight = isSelected ? baseWeight + 2.5 : isShared ? baseWeight + 0.5 : mode2SelectedAirport ? baseWeight + 1 : baseWeight;
+          const lineOpacity = isSelected ? 1 : isShared ? 0.82 : mode2SelectedAirport ? 0.9 : 0.76;
+
+          const polyline = L.polyline(arcPoints, {
+            color: isSelected ? '#ffffff' : strokeColor,
+            weight: lineWeight,
+            opacity: lineOpacity,
+            dashArray: animateFlow ? '6, 8' : undefined,
+            lineCap: 'round',
+            lineJoin: 'round',
+          });
+
+          // Interactive Popup
+          const popupHtml = `
+            <div class="p-1 text-slate-100 min-w-[240px]">
+              <div class="flex items-center justify-between gap-2 border-b border-slate-700 pb-2 mb-2">
+                <span class="text-xs font-mono font-bold text-white px-2 py-0.5 rounded border" style="background-color: ${strokeColor}33; border-color: ${strokeColor};">
+                  ${route.originCode} ➔ ${route.destCode}
+                </span>
+                <span class="text-[10px] font-bold px-2 py-0.5 rounded border ${
+                  isShared
+                    ? 'bg-amber-950/90 text-amber-300 border-amber-600'
+                    : 'bg-cyan-950/90 text-cyan-300 border-cyan-600'
+                }">
+                  ${isShared ? 'Ruta Compartida (2+ aerolíneas)' : 'Operador Único'}
+                </span>
+              </div>
+              <div class="text-xs font-medium text-slate-200 mb-1">
+                ${route.originName} <span class="text-slate-400">➔</span> ${route.destName}
+              </div>
+              <div class="grid grid-cols-2 gap-x-3 gap-y-1.5 text-[11px] mt-2 pt-2 border-t border-slate-800">
+                <div>
+                  <span class="text-slate-400 block text-[10px]">Aerolínea</span>
+                  <span class="font-bold" style="color: ${getAirlineColor(route.airline, customAirlineColors)}">${route.airline}</span>
+                </div>
+                <div>
+                  <span class="text-slate-400 block text-[10px]">Fecha de Autorización</span>
+                  <span class="font-bold text-emerald-400">${route.authorizationDate || 'Registrada'}</span>
+                </div>
+                <div>
+                  <span class="text-slate-400 block text-[10px]">Distancia</span>
+                  <span class="font-semibold text-slate-200">${Math.round(route.distanceKm).toLocaleString()} km</span>
+                </div>
+                <div>
+                  <span class="text-slate-400 block text-[10px]">Identificación cromática</span>
+                  <span class="font-semibold flex items-center gap-1">
+                    <span class="w-2.5 h-2.5 rounded-full inline-block" style="background-color: ${strokeColor}"></span>
+                    <span class="text-[10px] ${isShared ? 'text-amber-300' : 'text-slate-200'}">${isShared ? 'Dorado (Compartida)' : 'Color de Aerolínea'}</span>
+                  </span>
+                </div>
+              </div>
+              <div class="mt-2 text-[10px] text-cyan-400 italic">
+                * Haz clic en la ruta para ver todas las aerolíneas que la operan
+              </div>
+            </div>
+          `;
+
+          polyline.bindPopup(popupHtml, { closeButton: true, autoPan: true });
+
+          polyline.on('mouseover', () => {
+            if (!isSelected) {
+              polyline.setStyle({
+                weight: lineWeight + 1.2,
+                opacity: 1,
+                color: isShared ? '#fde047' : '#38bdf8',
+              });
+            }
+          });
+
+          polyline.on('mouseout', () => {
+            if (!isSelected) {
+              polyline.setStyle({
+                weight: lineWeight,
+                opacity: lineOpacity,
+                color: strokeColor,
+              });
+            }
+          });
+
+          polyline.on('click', () => {
+            if (onSelectRouteRef.current) onSelectRouteRef.current(route);
+          });
+
+          mode2RouteEntries.push({
+            originCode: route.originCode,
+            destCode: route.destCode,
+            polyline,
+            strokeColor: isSelected ? '#ffffff' : strokeColor,
+            baseWeight: lineWeight,
+            baseOpacity: lineOpacity,
+            isSelected,
+          });
+
+          routesLayerGroupRef.current?.addLayer(polyline);
+        });
       }
     }
+
+    // Helper to dynamically filter routes in Specific Mode on airport hover / popup
+    let activeMode2PopupAirport: string | null = null;
+    let activeMode2HoveredAirport: string | null = null;
+
+    const applyMode2AirportFilter = (targetCode: string | null, alternateCode?: string) => {
+      if (!routesLayerGroupRef.current || (mapMode !== 'routes_by_airline' && mapMode !== 'unique_routes')) return;
+      if (!targetCode) {
+        mode2RouteEntries.forEach((entry) => {
+          if (!routesLayerGroupRef.current?.hasLayer(entry.polyline)) {
+            routesLayerGroupRef.current?.addLayer(entry.polyline);
+          }
+          entry.polyline.setStyle({
+            opacity: entry.baseOpacity,
+            weight: entry.baseWeight,
+            color: entry.strokeColor,
+          });
+        });
+        return;
+      }
+
+      const matchCodes = new Set([targetCode, alternateCode].filter(Boolean) as string[]);
+
+      mode2RouteEntries.forEach((entry) => {
+        const isConnected = matchCodes.has(entry.originCode) || matchCodes.has(entry.destCode);
+        if (isConnected) {
+          if (!routesLayerGroupRef.current?.hasLayer(entry.polyline)) {
+            routesLayerGroupRef.current?.addLayer(entry.polyline);
+          }
+          entry.polyline.setStyle({
+            opacity: 0.96,
+            weight: Math.max(entry.baseWeight + 1.2, 3),
+            color: entry.strokeColor,
+          });
+          entry.polyline.bringToFront();
+        } else {
+          if (routesLayerGroupRef.current?.hasLayer(entry.polyline)) {
+            routesLayerGroupRef.current?.removeLayer(entry.polyline);
+          }
+        }
+      });
+    };
 
     // ==========================================
     // DRAW AIRPORT MARKERS
@@ -1795,16 +1823,14 @@ export const FlightMap: React.FC<FlightMapProps> = ({
                 id={`${id}-btn-expand-legend`}
                 onClick={() => setIsRightLegendExpanded(true)}
                 title={
-                  mapMode === 'unique_routes'
-                    ? 'Ver Nomenclatura y Atribución Cromática (Rutas Únicas)'
-                    : mapMode === 'airports'
-                    ? 'Ver Nomenclatura y Código Cromático de Aeropuertos'
-                    : 'Ver Nomenclatura y Atribución Cromática por Aerolínea'
+                  mapMode === 'airports'
+                    ? 'Ver Código Cromático de Aeropuertos'
+                    : 'Ver Rutas Autorizadas'
                 }
                 className="px-2.5 py-1.5 flex items-center gap-2 text-xs font-bold text-cyan-300 hover:text-white transition cursor-pointer"
               >
                 <Palette className="w-3.5 h-3.5 text-cyan-400" />
-                <span>Nomenclatura y Código Cromático</span>
+                <span>{mapMode === 'airports' ? 'Código Cromático de Aeropuertos' : 'Rutas Autorizadas'}</span>
                 <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
               </button>
             </div>
@@ -1904,29 +1930,27 @@ export const FlightMap: React.FC<FlightMapProps> = ({
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className={`font-black text-white tracking-wide truncate ${legendSize === 'compact' ? 'text-[11px]' : 'text-xs'}`}>
-                    {mapMode === 'unique_routes'
-                      ? 'Nomenclatura de Tramos Únicos'
-                      : mapMode === 'airports'
+                    {mapMode === 'airports'
                       ? 'Código Cromático de Aeropuertos'
-                      : 'Atribución Cromática por Operador'}
+                      : 'Rutas Autorizadas'}
                   </div>
                   <div className="text-[9px] text-cyan-300 font-mono truncate">
-                    {mapMode === 'unique_routes'
-                      ? `${uniqueCorridors.length} tramos únicos consolidados`
-                      : mapMode === 'airports'
+                    {mapMode === 'airports'
                       ? `${airports.length} aeropuertos • ${mode2AirlinesCount.length} aerolíneas`
-                      : `${routes.length} autorizaciones • ${mode2AirlinesCount.length} aerolíneas`}
+                      : uniqueAnalysisMode === 'general'
+                      ? `${uniqueCorridors.length || 346} rutas consolidadas (${singleCorridorsCount} exclusivas • ${multiCorridorsCount} compartidas)`
+                      : `${routes.length} rutas autorizadas • ${mode2AirlinesCount.length} aerolíneas`}
                   </div>
                 </div>
               </div>
 
               {/* Subtitle / Description */}
               <div className={`text-slate-400 mt-1.5 mb-1 leading-tight shrink-0 ${legendSize === 'compact' ? 'text-[9.5px]' : 'text-[10px]'}`}>
-                {mapMode === 'unique_routes'
-                  ? 'Identificación cromática por operador exclusivo y concurrencia de tramos.'
-                  : mapMode === 'airports'
+                {mapMode === 'airports'
                   ? 'Color específico para aeropuertos con 2 o más aerolíneas y color distinto editable para cada aerolínea.'
-                  : 'Correspondencia cromática y volumen de rutas autorizadas por aerolínea en México.'}
+                  : uniqueAnalysisMode === 'general'
+                  ? 'Modalidad: Análisis General — Clasificación de rutas por 1 sola aerolínea (operador único) vs 2 o más aerolíneas.'
+                  : 'Modalidad: Análisis Específico — 655 rutas autorizadas y 13 aerolíneas con rutas compartidas en dorado luminoso.'}
               </div>
 
               {/* ======================================================== */}
@@ -2174,12 +2198,12 @@ export const FlightMap: React.FC<FlightMapProps> = ({
               {/* ======================================================== */}
               {mapMode === 'unique_routes' && (
                 <>
-                  {/* Mode 3 Active Indicator */}
-                  <div className="my-1.5 flex items-center justify-between shrink-0 bg-slate-950 p-2 rounded-xl border border-slate-800">
+                  {/* Modalidad de Análisis Indicador Activo */}
+                  <div className="my-1.5 flex items-center justify-between shrink-0 bg-slate-950 px-2.5 py-1.5 rounded-xl border border-slate-800 text-xs">
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                      Modalidad Activa:
+                      Modalidad de Análisis:
                     </span>
-                    <span className="text-[10px] font-bold text-cyan-300 bg-slate-900 px-2 py-0.5 rounded border border-cyan-800">
+                    <span className="text-[10px] font-black text-cyan-300 bg-slate-900 px-2 py-0.5 rounded border border-cyan-800 uppercase tracking-wide">
                       {uniqueAnalysisMode === 'general' ? 'Análisis general' : 'Análisis específico'}
                     </span>
                   </div>
@@ -2188,48 +2212,10 @@ export const FlightMap: React.FC<FlightMapProps> = ({
                   {uniqueAnalysisMode === 'general' ? (
                     <div className="space-y-2 py-1 overflow-y-auto">
                       <div className="text-[10px] text-slate-400 leading-snug">
-                        En el <strong>Análisis general</strong> clasifica los {uniqueCorridors.length || 346} tramos consolidados por <strong>1 aerolínea autorizada</strong> ({singleCorridorsCount}) vs <strong>2 o más aerolíneas</strong> ({multiCorridorsCount}). Puedes seleccionar cualquiera de las dos o las dos juntas:
+                        En el <strong>Análisis general</strong> se clasifican las {uniqueCorridors.length || 346} rutas consolidadas por <strong>1 aerolínea autorizada</strong> ({singleCorridorsCount}) vs <strong>2 o más aerolíneas</strong> ({multiCorridorsCount}). Utiliza las casillas para activarlas o desactivarlas en el mapa:
                       </div>
 
-                      {/* Quick Filter Selection Segmented Buttons */}
-                      <div className="grid grid-cols-3 gap-1 bg-slate-950/80 p-1 rounded-xl border border-slate-800 text-[10px]">
-                        <button
-                          type="button"
-                          onClick={() => onSetMode3GeneralFilter ? onSetMode3GeneralFilter(true, true) : null}
-                          className={`py-1.5 px-1 rounded-lg font-bold transition flex items-center justify-center cursor-pointer text-center ${
-                            mode3GeneralShowSingle !== false && mode3GeneralShowMulti !== false
-                              ? 'bg-cyan-500 text-slate-950 font-black shadow-sm ring-1 ring-cyan-400'
-                              : 'text-slate-400 hover:text-white hover:bg-slate-900'
-                          }`}
-                          title="Visualizar ambas juntas en el mapa"
-                        >
-                          Las dos juntas
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => onSetMode3GeneralFilter ? onSetMode3GeneralFilter(true, false) : null}
-                          className={`py-1.5 px-1 rounded-lg font-bold transition flex items-center justify-center cursor-pointer text-center ${
-                            mode3GeneralShowSingle !== false && mode3GeneralShowMulti === false
-                              ? 'bg-cyan-500 text-slate-950 font-black shadow-sm ring-1 ring-cyan-400'
-                              : 'text-slate-400 hover:text-white hover:bg-slate-900'
-                          }`}
-                          title="Visualizar solo rutas de 1 aerolínea en el mapa"
-                        >
-                          1 aerolínea
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => onSetMode3GeneralFilter ? onSetMode3GeneralFilter(false, true) : null}
-                          className={`py-1.5 px-1 rounded-lg font-bold transition flex items-center justify-center cursor-pointer text-center ${
-                            mode3GeneralShowSingle === false && mode3GeneralShowMulti !== false
-                              ? 'bg-cyan-500 text-slate-950 font-black shadow-sm ring-1 ring-cyan-400'
-                              : 'text-slate-400 hover:text-white hover:bg-slate-900'
-                          }`}
-                          title="Visualizar solo rutas de 2 o más aerolíneas en el mapa"
-                        >
-                          2+ aerolíneas
-                        </button>
-                      </div>
+                      {/* Interactive toggle checkboxes / cards (No 3-button bar) */}
 
                       {/* Option 1: 1 sola aerolínea (Operador único) */}
                       <div
@@ -2332,41 +2318,45 @@ export const FlightMap: React.FC<FlightMapProps> = ({
                       </div>
                     </div>
                   ) : (
-                    /* Mode 3 Submode B: Análisis Específico */
-                    <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+                    /* Mode 3 Submode B: Análisis Específico (655 rutas autorizadas y 13 aerolíneas) */
+                    <div className="flex-1 overflow-y-auto space-y-2 pr-1 pt-1">
                       <div className="text-[10px] text-slate-400 leading-snug">
-                        En el <strong>Análisis específico</strong> se resalta a cada aerolínea con su propio color cuando es el único operador de la ruta, y se asigna un color compartido para 2 o más aerolíneas:
+                        En el <strong>Análisis específico</strong> se muestran las 655 rutas autorizadas y las 13 aerolíneas. Todas las rutas compartidas (2+ aerolíneas) se marcan con color <strong>dorado</strong> (personalizable) y las demás con el color propio de cada aerolínea, sujeto a los filtros de selección.
                       </div>
 
-                      {/* Multi-carrier color option */}
-                      <div className="flex items-center justify-between p-2 rounded-xl bg-slate-950/80 border border-amber-500/50">
-                        <div className="flex items-center gap-2">
+                      {/* Rutas compartidas en color DORADO (personalizable con selector de color) */}
+                      <div className="flex items-center justify-between p-2 rounded-xl bg-slate-950/80 border border-amber-500/60 shadow-sm">
+                        <div className="flex items-center gap-2 min-w-0">
                           <div className="relative flex items-center justify-center shrink-0">
                             <input
                               type="color"
-                              value={uniqueMultiColor}
+                              value={uniqueMultiColor || '#f59e0b'}
                               onChange={(e) => onChangeUniqueMultiColor && onChangeUniqueMultiColor(e.target.value)}
                               className="w-6 h-6 rounded-full border border-white/40 cursor-pointer p-0 bg-transparent opacity-0 absolute inset-0 z-10"
-                              title="Cambiar color para rutas compartidas por 2 o más aerolíneas"
+                              title="Cambiar color dorado para rutas compartidas"
                             />
                             <span
-                              className="w-4 h-4 rounded-full border border-white/70 shadow-sm"
-                              style={{ backgroundColor: uniqueMultiColor }}
+                              className="w-4 h-4 rounded-full border-2 border-white/80 shadow-sm"
+                              style={{ backgroundColor: uniqueMultiColor || '#f59e0b' }}
                             />
                           </div>
-                          <div>
-                            <div className="text-xs font-bold text-amber-300">2 o Más Aerolíneas</div>
-                            <div className="text-[10px] text-slate-400">Rutas compartidas</div>
+                          <div className="min-w-0">
+                            <div className="text-xs font-bold text-amber-300 leading-tight">
+                              Rutas Compartidas (2+ aerolíneas)
+                            </div>
+                            <div className="text-[9.5px] text-slate-400">
+                              Identificadas en color dorado
+                            </div>
                           </div>
                         </div>
-                        <span className="font-mono text-xs font-bold text-amber-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
+                        <span className="font-mono text-xs font-bold text-amber-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-800 shrink-0">
                           {multiCorridorsCount} rutas
                         </span>
                       </div>
 
-                      {/* Header for individual exclusive airlines */}
+                      {/* Header for 13 Airlines */}
                       <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pt-1 flex items-center justify-between">
-                        <span>Aerolíneas Autorizadas ({exclusiveAirlinesCount.length}):</span>
+                        <span>Aerolíneas ({mode2AirlinesCount.length}):</span>
                         <div className="flex items-center gap-1.5">
                           <button
                             type="button"
@@ -2374,25 +2364,25 @@ export const FlightMap: React.FC<FlightMapProps> = ({
                             className="text-[10px] text-cyan-400 hover:text-white underline cursor-pointer"
                             title="Marcar todas las aerolíneas"
                           >
-                            Marcar todas
+                            Todas
                           </button>
                           <span className="text-slate-600">|</span>
                           <button
                             type="button"
                             onClick={onDeselectAllAirlines}
                             className="text-[10px] text-slate-400 hover:text-rose-400 underline cursor-pointer"
-                            title="Deseleccionar todas para elegir 2 o más con las casillas"
+                            title="Deseleccionar todas para elegir con las casillas"
                           >
-                            Deseleccionar todas
+                            Ninguna
                           </button>
                         </div>
                       </div>
 
-                      <div className="text-[10px] text-cyan-300/90 bg-cyan-950/40 p-2 rounded-xl border border-cyan-800/50 leading-tight">
-                        ☑ <strong>Selección múltiple con casillas:</strong> Marca 2 o más aerolíneas exclusivos para compararlos simultáneamente.
+                      <div className={`text-cyan-300/90 bg-cyan-950/40 p-1.5 rounded-lg border border-cyan-800/50 leading-tight ${legendSize === 'compact' ? 'text-[9px]' : 'text-[10px]'}`}>
+                        ☑ <strong>Filtros por aerolínea:</strong> Selecciona las aerolíneas a visualizar. Cada aerolínea muestra su color propio para rutas exclusivas.
                       </div>
 
-                      {/* Exclusive Airlines List with Checkboxes */}
+                      {/* 13 Airlines List with Checkboxes, Colors, and Route Counts */}
                       <div
                         className={`space-y-1 overflow-y-auto pr-0.5 ${
                           legendSize === 'compact'
@@ -2402,7 +2392,7 @@ export const FlightMap: React.FC<FlightMapProps> = ({
                             : 'max-h-[58vh]'
                         }`}
                       >
-                        {exclusiveAirlinesCount.map(([airline, count]) => {
+                        {mode2AirlinesCount.map(([airline, count]) => {
                           const color = getAirlineColor(airline, customAirlineColors);
                           const isNoneSelected = selectedAirlines.includes('__NONE__');
                           const isChecked = !isNoneSelected && (selectedAirlines.length === 0 || selectedAirlines.includes(airline));
@@ -2435,7 +2425,7 @@ export const FlightMap: React.FC<FlightMapProps> = ({
                                     value={color}
                                     onChange={(e) => onUpdateAirlineColor && onUpdateAirlineColor(airline, e.target.value)}
                                     className="w-4 h-4 rounded-full border border-white/40 cursor-pointer p-0 bg-transparent opacity-0 absolute inset-0 z-10"
-                                    title={`Cambiar color de ${airline}`}
+                                    title={`Cambiar color asignado a ${airline}`}
                                   />
                                   <span
                                     className="w-3 h-3 rounded-full border border-white/70 shadow-sm"
@@ -2462,10 +2452,10 @@ export const FlightMap: React.FC<FlightMapProps> = ({
                         })}
                       </div>
 
-                      <div className="p-2 rounded-lg bg-slate-950/60 border border-slate-800 text-[10px] text-slate-400 flex items-center justify-between">
-                        <span>Tramos totales:</span>
+                      <div className="p-1.5 rounded-lg bg-slate-950/60 border border-slate-800 text-[9.5px] text-slate-400 flex items-center justify-between">
+                        <span>Total de autorizaciones:</span>
                         <span className="font-mono font-bold text-white">
-                          {singleCorridorsCount} exclusivas + {multiCorridorsCount} compartidas = {uniqueCorridors.length}
+                          {routes.length} activas ({baseRoutesForAirlines.length} en catálogo)
                         </span>
                       </div>
                     </div>

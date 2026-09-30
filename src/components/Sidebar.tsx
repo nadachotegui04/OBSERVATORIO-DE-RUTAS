@@ -606,7 +606,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <Sliders className="w-3.5 h-3.5 text-cyan-400" />
                     Modo de Visualización
                   </span>
-                  <span className="text-[10px] text-cyan-400 font-semibold font-mono">3 Vistas</span>
+                  <span className="text-[10px] text-cyan-400 font-semibold font-mono">2 Vistas</span>
                 </div>
 
                 <div className="grid grid-cols-1 gap-1.5">
@@ -619,7 +619,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     }`}
                   >
                     <div className={`p-1 rounded mt-0.5 ${mapMode === 'airports' ? 'bg-cyan-500 text-slate-950' : 'bg-slate-800 text-slate-400'}`}>
-                      <Building2 className="w-3 h-3" />
+                      <Building2 className="w-3.5 h-3.5" />
                     </div>
                     <div>
                       <div className="font-bold text-xs">1. Aeropuertos y Hub</div>
@@ -630,39 +630,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   </button>
 
                   <button
-                    onClick={() => onMapModeChange('routes_by_airline')}
+                    onClick={() => onMapModeChange('unique_routes')}
                     className={`p-2 rounded-lg text-left transition flex items-start gap-2 border cursor-pointer ${
-                      mapMode === 'routes_by_airline'
+                      mapMode === 'unique_routes' || mapMode === 'routes_by_airline'
                         ? 'bg-cyan-950/70 border-cyan-500 text-white shadow-sm'
                         : 'bg-slate-900/60 border-slate-800/80 text-slate-300 hover:border-slate-700'
                     }`}
                   >
-                    <div className={`p-1 rounded mt-0.5 ${mapMode === 'routes_by_airline' ? 'bg-cyan-500 text-slate-950' : 'bg-slate-800 text-slate-400'}`}>
-                      <Plane className="w-3 h-3" />
+                    <div className={`p-1 rounded mt-0.5 ${mapMode === 'unique_routes' || mapMode === 'routes_by_airline' ? 'bg-cyan-500 text-slate-950' : 'bg-slate-800 text-slate-400'}`}>
+                      <GitCommit className="w-3.5 h-3.5" />
                     </div>
                     <div>
                       <div className="font-bold text-xs">2. Rutas Autorizadas</div>
                       <div className="text-[10px] text-slate-400 mt-0.5">
-                        Muestra todas las rutas autorizadas individuales por aerolínea y fecha de autorización.
-                      </div>
-                    </div>
-                  </button>
-
-                  <button
-                    onClick={() => onMapModeChange('unique_routes')}
-                    className={`p-2 rounded-lg text-left transition flex items-start gap-2 border cursor-pointer ${
-                      mapMode === 'unique_routes'
-                        ? 'bg-cyan-950/70 border-cyan-500 text-white shadow-sm'
-                        : 'bg-slate-900/60 border-slate-800/80 text-slate-300 hover:border-slate-700'
-                    }`}
-                  >
-                    <div className={`p-1 rounded mt-0.5 ${mapMode === 'unique_routes' ? 'bg-cyan-500 text-slate-950' : 'bg-slate-800 text-slate-400'}`}>
-                      <GitCommit className="w-3 h-3" />
-                    </div>
-                    <div>
-                      <div className="font-bold text-xs">3. Rutas Únicas</div>
-                      <div className="text-[10px] text-slate-400 mt-0.5">
-                        Tramos consolidados sin repetir; muestra aerolíneas autorizadas y fechas de autorización.
+                        Visualiza rutas autorizadas clasificadas por operador único o compartidas (en dorado con luz), con análisis general y específico por aerolínea.
                       </div>
                     </div>
                   </button>
@@ -683,12 +664,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   </div>
                 )}
 
-                {mapMode === 'unique_routes' && (
+                {(mapMode === 'unique_routes' || mapMode === 'routes_by_airline') && (
                   <div className="mt-3 p-3 rounded-xl bg-slate-950/95 border-2 border-cyan-500/70 text-xs space-y-2.5 shadow-lg shadow-cyan-950/40">
                     <div className="flex items-center justify-between">
                       <span className="font-black text-cyan-300 flex items-center gap-1.5 uppercase text-[11px] tracking-wider">
                         <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                        Modalidad de Análisis (Rutas Únicas)
+                        Modalidad de Análisis (Rutas Autorizadas)
                       </span>
                       <span className="text-[10px] bg-cyan-900/80 text-cyan-200 px-2 py-0.5 rounded-full border border-cyan-700 font-bold">
                         {uniqueAnalysisMode === 'general' ? 'Opción A: General' : 'Opción B: Específico'}
@@ -728,8 +709,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
                     <p className="text-[11px] text-slate-300 leading-relaxed border-t border-slate-800/80 pt-2">
                       {uniqueAnalysisMode === 'general'
-                        ? 'a) Análisis general: Muestra todos los 346 tramos consolidados clasificados por 1 sola aerolínea autorizada (177 de operador único) vs 2 o más aerolíneas autorizadas (169 compartidas). Puedes seleccionar cualquiera de las dos o las dos juntas para visualizarlas en el mapa.'
-                        : 'b) Análisis específico: Te permite elegir aerolíneas individuales con colores personalizados y resalta rutas exclusivas de una sola aerolínea o compartidas por 2 o más aerolíneas.'}
+                        ? 'a) Análisis general: Muestra las 346 rutas consolidadas clasificadas por 1 sola aerolínea autorizada (177 de operador único) vs 2 o más aerolíneas autorizadas (169 compartidas). Utiliza las casillas para activarlas o desactivarlas en el mapa.'
+                        : 'b) Análisis específico: Muestra las 655 rutas autorizadas y las 13 aerolíneas. Todas las rutas compartidas se marcan con color dorado con iluminación y las demás rutas con colores propios por aerolínea, sujeto a los filtros establecidos.'}
                     </p>
 
                     {uniqueAnalysisMode === 'general' && (
@@ -737,11 +718,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         <div className="flex items-center justify-between">
                           <span className="text-[10px] font-black text-cyan-300 uppercase tracking-wider flex items-center gap-1.5">
                             <Layers className="w-3.5 h-3.5 text-cyan-400" />
-                            Selección en el Mapa:
+                            Selección de Rutas en el Mapa:
                           </span>
                           <span className="text-[10px] font-mono font-bold text-cyan-200 bg-slate-950 px-2 py-0.5 rounded border border-cyan-700/60">
                             {filters.mode3GeneralShowSingle !== false && filters.mode3GeneralShowMulti !== false
-                              ? 'Las dos juntas'
+                              ? 'Ambas seleccionadas'
                               : filters.mode3GeneralShowSingle !== false
                               ? '1 aerolínea'
                               : filters.mode3GeneralShowMulti !== false
@@ -750,62 +731,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           </span>
                         </div>
 
-                        {/* Segmented quick selection buttons */}
-                        <div className="grid grid-cols-3 gap-1 bg-slate-950/80 p-1 rounded-lg border border-slate-800 text-[10px]">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              onFilterChange({
-                                ...filters,
-                                mode3GeneralShowSingle: true,
-                                mode3GeneralShowMulti: true,
-                              })
-                            }
-                            className={`py-1.5 px-1 rounded-md font-bold transition flex items-center justify-center cursor-pointer text-center ${
-                              filters.mode3GeneralShowSingle !== false && filters.mode3GeneralShowMulti !== false
-                                ? 'bg-cyan-500 text-slate-950 font-black shadow-sm ring-1 ring-cyan-400'
-                                : 'text-slate-400 hover:text-white'
-                            }`}
-                          >
-                            Las dos juntas
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              onFilterChange({
-                                ...filters,
-                                mode3GeneralShowSingle: true,
-                                mode3GeneralShowMulti: false,
-                              })
-                            }
-                            className={`py-1.5 px-1 rounded-md font-bold transition flex items-center justify-center cursor-pointer text-center ${
-                              filters.mode3GeneralShowSingle !== false && filters.mode3GeneralShowMulti === false
-                                ? 'bg-cyan-500 text-slate-950 font-black shadow-sm ring-1 ring-cyan-400'
-                                : 'text-slate-400 hover:text-white'
-                            }`}
-                          >
-                            1 aerolínea
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              onFilterChange({
-                                ...filters,
-                                mode3GeneralShowSingle: false,
-                                mode3GeneralShowMulti: true,
-                              })
-                            }
-                            className={`py-1.5 px-1 rounded-md font-bold transition flex items-center justify-center cursor-pointer text-center ${
-                              filters.mode3GeneralShowSingle === false && filters.mode3GeneralShowMulti !== false
-                                ? 'bg-cyan-500 text-slate-950 font-black shadow-sm ring-1 ring-cyan-400'
-                                : 'text-slate-400 hover:text-white'
-                            }`}
-                          >
-                            2+ aerolíneas
-                          </button>
-                        </div>
-
-                        {/* Interactive toggle checkboxes / cards */}
+                        {/* Interactive toggle checkboxes / cards (No 3-button bar) */}
                         <div className="space-y-1.5">
                           {/* Option 1: 1 aerolínea */}
                           <div
@@ -928,23 +854,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       </div>
                     )}
 
-                    {uniqueAnalysisMode === 'specific' && filters.selectedAirlines.length === 1 && (
-                      <label className="flex items-center gap-2 pt-1 text-slate-300 cursor-pointer select-none">
-                        <input
-                          type="checkbox"
-                          checked={!!filters.onlyExclusiveRoutes}
-                          onChange={(e) =>
-                            onFilterChange({
-                              ...filters,
-                              onlyExclusiveRoutes: e.target.checked,
-                            })
-                          }
-                          className="rounded border-slate-700 text-cyan-500 focus:ring-cyan-500 bg-slate-950 cursor-pointer"
-                        />
-                        <span className="text-[11px] font-semibold text-amber-300">
-                          Solo rutas exclusivas de {filters.selectedAirlines[0]} (operador único)
-                        </span>
-                      </label>
+                    {uniqueAnalysisMode === 'specific' && (
+                      <div className="mt-2.5 p-2.5 rounded-xl bg-slate-900/90 border border-amber-500/50 space-y-1.5 text-[10.5px] text-slate-300 shadow-md">
+                        <div className="font-bold text-amber-300 flex items-center gap-1.5">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-amber-400" />
+                          <span>655 Rutas Autorizadas • 13 Aerolíneas</span>
+                        </div>
+                        <p className="text-[10px] text-slate-300 leading-relaxed">
+                          • <strong>Rutas compartidas (2+):</strong> Marcadas en color dorado (personalizable).<br />
+                          • <strong>Rutas de operador único:</strong> Con color propio de cada aerolínea.<br />
+                          • <strong>Filtros por aerolínea:</strong> Selecciona en el panel flotante derecho <strong>Rutas Únicas</strong> las aerolíneas a visualizar.
+                        </p>
+                      </div>
                     )}
                   </div>
                 )}
@@ -1194,15 +1115,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </div>
             </div>
 
-            {/* Modos 2 y 3: Las aerolíneas están EXCLUSIVAMENTE en la pestaña de la derecha */}
+            {/* Modo 2: Las aerolíneas están EXCLUSIVAMENTE en la pestaña de la derecha */}
             {(mapMode === 'routes_by_airline' || mapMode === 'unique_routes') && (
               <div className="bg-slate-950/80 p-3 rounded-xl border border-cyan-500/40 space-y-1.5">
                 <div className="flex items-center gap-2 text-cyan-300 text-xs font-bold">
                   <Palette className="w-4 h-4 text-cyan-400" />
-                  <span>Aerolíneas y Código Cromático</span>
+                  <span>Rutas Autorizadas y Código Cromático</span>
                 </div>
                 <p className="text-[11px] text-slate-300 leading-snug">
-                  En los <strong>Modos 2 y 3</strong>, las aerolíneas y su código cromático se gestionan exclusivamente en la pestaña de la derecha (<strong>Nomenclatura y Código Cromático</strong>), con casillas de selección múltiple para comparar 2 o más aerolíneas.
+                  Las aerolíneas, rutas compartidas en color dorado con luz y su código cromático se gestionan en la pestaña flotante de la derecha (<strong>Rutas Autorizadas</strong>), con casillas de selección múltiple y colores personalizables.
                 </p>
               </div>
             )}

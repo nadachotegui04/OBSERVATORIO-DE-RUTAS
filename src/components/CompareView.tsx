@@ -297,6 +297,7 @@ export const CompareView: React.FC<CompareViewProps> = ({
         </div>
 
         {/* Center: Linked Visualization Mode Switcher (1. Aeropuertos, 2. Rutas, 3. Rutas Únicas) */}
+        {/* Center: 2 Combined Map Visualization Modes */}
         <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 gap-1 shadow-inner">
           <button
             type="button"
@@ -315,32 +316,17 @@ export const CompareView: React.FC<CompareViewProps> = ({
 
           <button
             type="button"
-            onClick={() => handleModeChange('routes_by_airline')}
-            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-              compareMapMode === 'routes_by_airline'
-                ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20 ring-1 ring-cyan-400'
-                : 'text-slate-300 hover:text-white hover:bg-slate-850'
-            }`}
-            title="Comparar en Modo 2: Rutas Autorizadas con arcos cromáticos por aerolínea"
-          >
-            <Plane className="w-3.5 h-3.5" />
-            <span className="hidden md:inline">2. Rutas Autorizadas</span>
-            <span className="md:hidden">2. Rutas</span>
-          </button>
-
-          <button
-            type="button"
             onClick={() => handleModeChange('unique_routes')}
             className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-              compareMapMode === 'unique_routes'
+              compareMapMode === 'unique_routes' || compareMapMode === 'routes_by_airline'
                 ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20 ring-1 ring-cyan-400'
                 : 'text-slate-300 hover:text-white hover:bg-slate-850'
             }`}
-            title="Comparar en Modo 3: Rutas Únicas y exclusividad de tramos"
+            title="Comparar en Modo 2: Rutas Únicas (Análisis General y Específico)"
           >
             <GitCommit className="w-3.5 h-3.5" />
-            <span className="hidden md:inline">3. Rutas Únicas</span>
-            <span className="md:hidden">3. Únicas</span>
+            <span className="hidden md:inline">2. Rutas Únicas</span>
+            <span className="md:hidden">2. Únicas</span>
           </button>
         </div>
 

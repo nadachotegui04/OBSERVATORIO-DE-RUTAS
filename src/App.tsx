@@ -262,8 +262,8 @@ export default function App() {
   const [isExportOpen, setIsExportOpen] = useState<boolean>(false);
   const [selectedRouteForDetails, setSelectedRouteForDetails] = useState<FlightRoute | null>(null);
 
-  // 3 Map Visualization Modes: 'airports' | 'routes_by_airline' | 'unique_routes'
-  const [mapMode, setMapMode] = useState<MapVisualizationMode>('routes_by_airline');
+  // 2 Combined Map Visualization Modes: 'airports' | 'unique_routes' (combines modes 2 and 3)
+  const [mapMode, setMapMode] = useState<MapVisualizationMode>('unique_routes');
   const [selectedOriginAirport, setSelectedOriginAirport] = useState<string | null>(null);
   const [selectedAirportForConnections, setSelectedAirportForConnections] = useState<string | null>(null);
 
@@ -289,7 +289,7 @@ export default function App() {
       const saved = localStorage.getItem('gis_mexico_unique_multi_color');
       if (saved) return saved;
     } catch {}
-    return '#f59e0b';
+    return '#fbbf24';
   });
 
   useEffect(() => {
@@ -770,15 +770,12 @@ export default function App() {
         if (!matchesQ) return false;
       }
 
-      // Airlines (In Mode 3 general analysis, all corridors are evaluated into single vs 2+ airlines)
-      const skipAirlineFilter = mapMode === 'unique_routes' && uniqueAnalysisMode === 'general';
-      if (!skipAirlineFilter) {
-        if (filters.selectedAirlines.includes('__NONE__')) {
-          return false;
-        }
-        if (filters.selectedAirlines.length > 0 && !filters.selectedAirlines.includes(r.airline)) {
-          return false;
-        }
+      // Airlines Filter: Always strictly respect selected airlines (ties routes to selected airline)
+      if (filters.selectedAirlines.includes('__NONE__')) {
+        return false;
+      }
+      if (filters.selectedAirlines.length > 0 && !filters.selectedAirlines.includes(r.airline)) {
+        return false;
       }
 
       // Mode 3 General Analysis: Filter by 1 airline (operador único) vs 2 or more airlines (rutas compartidas)
@@ -886,10 +883,22 @@ export default function App() {
 
   // Mode-aware statistics for the 4 KPI Apartados (Requirement 5 & 7)
   const modeStats = useMemo(() => {
-    if (mapMode === 'unique_routes') {
+    if (mapMode === 'unique_routes' || mapMode === 'routes_by_airline') {
       const singleAirline =
         filters.selectedAirlines.length === 1 ? filters.selectedAirlines[0] : null;
-      // In unique routes mode, count dynamically reflects uniqueAuthorizationsCount (346 unique corridors for full Excel dataset)
+      if (uniqueAnalysisMode === 'specific') {
+        return {
+          authorizations: stats.totalAuthorizations || filteredRoutes.length,
+          authorizationsSubtitle: singleAirline
+            ? `rutas de ${singleAirline}`
+            : `(${availableAirlines.length} aerolíneas)`,
+          avgPax: stats.avgPassengersPerFlight,
+          avgPaxSubtitle: 'pax / vuelo',
+          totalFlights: stats.totalFlights,
+          totalPassengers: stats.totalPassengers,
+        };
+      }
+      // In unique routes general analysis mode, count dynamically reflects uniqueAuthorizationsCount (346 unique corridors)
       const count = uniqueAuthorizationsCount;
       return {
         authorizations: count,
@@ -900,16 +909,6 @@ export default function App() {
         avgPaxSubtitle: 'pax / vuelo',
         totalFlights: uniqueTotalFlights,
         totalPassengers: uniqueTotalPassengers,
-      };
-    }
-    if (mapMode === 'routes_by_airline') {
-      return {
-        authorizations: stats.totalAuthorizations || filteredRoutes.length,
-        authorizationsSubtitle: `(${availableAirlines.length} aerolíneas)`,
-        avgPax: stats.avgPassengersPerFlight,
-        avgPaxSubtitle: 'pax / vuelo',
-        totalFlights: stats.totalFlights,
-        totalPassengers: stats.totalPassengers,
       };
     }
     // 'airports' mode (1. Aeropuertos y Hub)
