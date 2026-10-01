@@ -216,7 +216,7 @@ export default function App() {
           parsed.routes.every((r: any) => r.sheetName === 'Observatorio de Rutas')
         ) {
           const corridors = getUniqueRouteCorridors(parsed.routes);
-          if (corridors.length === 346) {
+          if (corridors.length >= 340 && corridors.length <= 365) {
             return sanitizeAndEnrichRoutes(parsed.routes);
           }
         }
@@ -267,6 +267,48 @@ export default function App() {
   const [mapMode, setMapMode] = useState<MapVisualizationMode>('unique_routes');
   const [selectedOriginAirport, setSelectedOriginAirport] = useState<string | null>(null);
   const [selectedAirportForConnections, setSelectedAirportForConnections] = useState<string | null>(null);
+
+  const handleMapModeChange = (newMode: MapVisualizationMode) => {
+    setMapMode(newMode);
+    if (newMode === 'airports') {
+      // Remove bilateral city filtering when entering Mode 1
+      setFilters((prev) => ({
+        ...prev,
+        selectedOrigins: [],
+        selectedDestinations: [],
+      }));
+    }
+  };
+
+  const handleFilterAirportConnections = (code: string) => {
+    setFilters((prev) => {
+      const currentC1 = prev.selectedOrigins[0];
+      if (currentC1 === code) {
+        // Toggle off if already filtered
+        return {
+          ...prev,
+          selectedOrigins: [],
+        };
+      }
+      const currentC2 = prev.selectedDestinations[0];
+      let newDestinations = prev.selectedDestinations;
+      if (currentC2) {
+        const connects = allRoutes.some(
+          (r) =>
+            (r.originCode === code && r.destCode === currentC2) ||
+            (r.originCode === currentC2 && r.destCode === code)
+        );
+        if (!connects) {
+          newDestinations = [];
+        }
+      }
+      return {
+        ...prev,
+        selectedOrigins: [code],
+        selectedDestinations: newDestinations,
+      };
+    });
+  };
 
   // Mode 3 (and Mode 2) Analysis Mode: 'general' vs 'specific'
   const [uniqueAnalysisMode, setUniqueAnalysisMode] = useState<UniqueRoutesAnalysisMode>(() => {
@@ -752,9 +794,9 @@ export default function App() {
         }
       }
 
-      // Top N filter if active: only include routes connected to any of the Top N airports
+      // Top N filter if active: only include routes connected between the selected Top N airports
       if (topNCodes) {
-        if (!topNCodes.has(r.originCode) && !topNCodes.has(r.destCode)) {
+        if (!topNCodes.has(r.originCode) || !topNCodes.has(r.destCode)) {
           return false;
         }
       }
@@ -803,22 +845,24 @@ export default function App() {
         return false;
       }
 
-      // Ciudad 1 & Ciudad 2 Bilateral Filtering
-      const c1 = filters.selectedOrigins[0];
-      const c2 = filters.selectedDestinations[0];
+      // Ciudad 1 & Ciudad 2 Bilateral Filtering (only applicable when not in Mode 1)
+      if (mapMode !== 'airports') {
+        const c1 = filters.selectedOrigins[0];
+        const c2 = filters.selectedDestinations[0];
 
-      if (c1 && c2) {
-        // Direct bilateral connection between c1 and c2 in either direction
-        const connects =
-          (r.originCode === c1 && r.destCode === c2) ||
-          (r.originCode === c2 && r.destCode === c1);
-        if (!connects) return false;
-      } else if (c1) {
-        // Connects to Ciudad 1 in either direction
-        if (r.originCode !== c1 && r.destCode !== c1) return false;
-      } else if (c2) {
-        // Connects to Ciudad 2 in either direction
-        if (r.originCode !== c2 && r.destCode !== c2) return false;
+        if (c1 && c2) {
+          // Direct bilateral connection between c1 and c2 in either direction
+          const connects =
+            (r.originCode === c1 && r.destCode === c2) ||
+            (r.originCode === c2 && r.destCode === c1);
+          if (!connects) return false;
+        } else if (c1) {
+          // Connects to Ciudad 1 in either direction
+          if (r.originCode !== c1 && r.destCode !== c1) return false;
+        } else if (c2) {
+          // Connects to Ciudad 2 in either direction
+          if (r.originCode !== c2 && r.destCode !== c2) return false;
+        }
       }
 
       // Exclusive routes filter (Mode 3: when user wants only exclusive routes of the selected airline)
@@ -851,13 +895,18 @@ export default function App() {
     });
   }, [allRoutes, filters, selectedHubCode, corridorAllAirlinesMap, top15Airports, mapMode, uniqueAnalysisMode]);
 
-  // Unique Airports for filtered routes (if Top N is active in airports mode, display strictly the Top N airports)
+  // Unique Airports for filtered routes (if Top N is active in airports mode, display strictly the Top N airports that match filters)
   const filteredAirports = useMemo(() => {
+    const fromRoutes = extractUniqueAirports(filteredRoutes);
     if (filters.selectedTopN && mapMode === 'airports') {
+      const topNCodes = new Set(top15Airports.slice(0, filters.selectedTopN).map((h) => h.code));
+      if (filters.selectedAirlines.length > 0) {
+        return fromRoutes.filter(a => topNCodes.has(a.code));
+      }
       return top15Airports.slice(0, filters.selectedTopN);
     }
-    return extractUniqueAirports(filteredRoutes);
-  }, [filteredRoutes, filters.selectedTopN, mapMode, top15Airports]);
+    return fromRoutes;
+  }, [filteredRoutes, filters.selectedTopN, mapMode, top15Airports, filters.selectedAirlines]);
 
   // Dataset Analytics
   const stats = useMemo(() => {
@@ -913,16 +962,15 @@ export default function App() {
       };
     }
     // 'airports' mode (1. Aeropuertos y Hub)
-    const topRankingLabel = filters.selectedTopN ? `Top ${filters.selectedTopN}` : `${top4Hubs.length} hubs`;
     return {
       authorizations: stats.totalAuthorizations || filteredRoutes.length,
-      authorizationsSubtitle: `(${filteredAirports.length} aeropuertos | ${topRankingLabel})`,
+      authorizationsSubtitle: `${filteredAirports.length} aeropuertos`,
       avgPax: stats.avgPassengersPerFlight,
       avgPaxSubtitle: 'pax / vuelo',
       totalFlights: stats.totalFlights,
       totalPassengers: stats.totalPassengers,
     };
-  }, [mapMode, uniqueAuthorizationsCount, uniqueAvgPax, uniqueTotalFlights, uniqueTotalPassengers, stats, filteredRoutes.length, availableAirlines.length, top4Hubs.length, filteredAirports.length, filters.selectedTopN]);
+  }, [mapMode, uniqueAuthorizationsCount, uniqueAvgPax, uniqueTotalFlights, uniqueTotalPassengers, stats, filteredRoutes.length, availableAirlines.length, filteredAirports.length, filters.selectedTopN]);
 
   // Save current view
   const handleSaveCurrentMap = (name: string, description: string) => {
@@ -1122,7 +1170,7 @@ export default function App() {
           maxFlightsPossible={maxFlightsPossible}
           maxPassengersPossible={maxPassengersPossible}
           mapMode={mapMode}
-          onMapModeChange={setMapMode}
+          onMapModeChange={handleMapModeChange}
           tileLayer={tileLayer}
           onTileLayerChange={setTileLayer}
           arcCurvature={arcCurvature}
@@ -1180,9 +1228,11 @@ export default function App() {
           {activeView !== 'compare' && (
             <div
               id="aviation-nav-bar"
-              className="absolute top-0 left-0 right-0 px-4 py-2.5 flex items-center justify-end gap-3 bg-transparent border-none pointer-events-none z-[410]"
+              className={`absolute top-0 left-0 right-0 px-4 py-2.5 flex items-center justify-end gap-3 bg-transparent border-none pointer-events-none transition-all duration-200 ${
+                selectedAirportForConnections ? 'z-10 opacity-20' : 'z-[410]'
+              }`}
             >
-              <div className="flex items-center gap-3 shrink-0 pointer-events-auto">
+              <div className={`flex items-center gap-3 shrink-0 ${selectedAirportForConnections ? 'pointer-events-none' : 'pointer-events-auto'}`}>
                 {/* Top N Active Indicator */}
                 {filters.selectedTopN && !selectedHubCode && (
                   <div className="flex items-center gap-2 bg-cyan-950/95 backdrop-blur-md border border-cyan-500/80 px-3 py-1.5 rounded-xl shadow-lg shrink-0">
@@ -1277,7 +1327,8 @@ export default function App() {
                 allRoutes={allRoutes}
                 airports={filteredAirports}
                 mapMode={mapMode}
-                onMapModeChange={setMapMode}
+                onMapModeChange={handleMapModeChange}
+                isAirportConnectionsOpen={Boolean(selectedAirportForConnections)}
                 selectedAirportCode={selectedOriginAirport}
                 onSelectAirport={(code) => {
                   setSelectedOriginAirport(prev => prev === code ? null : code);
@@ -1286,6 +1337,7 @@ export default function App() {
                   // Triggered strictly by clicking "Ver destinos y conexiones directas" button inside the popup
                   setSelectedAirportForConnections(code);
                 }}
+                onFilterAirportConnections={handleFilterAirportConnections}
                 tileLayerKey={tileLayer}
                 arcCurvature={arcCurvature}
                 colorScheme={colorScheme}
@@ -1336,7 +1388,7 @@ export default function App() {
               currentMainFilters={filters}
               customAirlineColors={customAirlineColors}
               activeMapMode={mapMode}
-              onMapModeChange={setMapMode}
+              onMapModeChange={handleMapModeChange}
               onUpdateAirlineColor={handleUpdateAirlineColor}
               showAirportLabels={showAirportLabels}
               onToggleAirportLabels={setShowAirportLabels}

@@ -98,7 +98,7 @@ export const AfacAuthGate: React.FC<AfacAuthGateProps> = ({ onLoginSuccess }) =>
             Dirección Ejecutiva de Transporte y Control Aeronáutico
           </p>
           <p className="text-xs sm:text-sm font-bold text-cyan-300 tracking-wide mt-0.5">
-            Coordinación de Concesiones y Transporte Aéreo
+            Coordinación de Concesiones de Transporte Aéreo
           </p>
           <div className="mt-3.5 pt-3 border-t border-slate-800">
             <h3 className="text-xl sm:text-2xl md:text-3xl font-black text-white tracking-tight leading-snug">

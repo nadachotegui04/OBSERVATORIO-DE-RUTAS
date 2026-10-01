@@ -127,10 +127,18 @@ export const MEXICO_AIRPORTS: Record<string, Airport> = {
   SJD: {
     code: 'SJD',
     name: 'Aeropuerto Internacional de Los Cabos',
-    city: 'San José del Cabo / Cabo San Lucas',
+    city: 'San José del Cabo',
     state: 'Baja California Sur',
     lat: 23.1518,
     lng: -109.7215,
+  },
+  CSL: {
+    code: 'CSL',
+    name: 'Aeródromo Internacional de Cabo San Lucas',
+    city: 'Cabo San Lucas',
+    state: 'Baja California Sur',
+    lat: 22.9489,
+    lng: -109.9389,
   },
   LAP: {
     code: 'LAP',
@@ -744,6 +752,12 @@ export function resolveAirport(rawQuery: string | undefined | null, lat?: number
   const upper = q.toUpperCase().replace(/[^A-Z0-9]/g, '');
 
   // Specific canonical aliases for requested Mexican airports
+  if (upper === 'CSL' || upper === 'MMSL' || upper === 'CABOSANLUCAS' || upper === 'AERODROMOCABOSANLUCAS') {
+    return MEXICO_AIRPORTS['CSL'];
+  }
+  if (upper === 'SJD' || upper === 'MMSD' || upper === 'SANJOSEDELCABO' || upper === 'LOSCABOS') {
+    return MEXICO_AIRPORTS['SJD'];
+  }
   if (upper === 'ZIH' || upper === 'IXT' || upper === 'MMZH' || upper === 'ZIHUATANEJO' || upper === 'IXTAPA') {
     return MEXICO_AIRPORTS['ZIH'];
   }

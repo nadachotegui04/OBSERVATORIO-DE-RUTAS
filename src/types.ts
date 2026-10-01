@@ -77,6 +77,7 @@ export interface UniqueRouteCorridor {
   totalFlights: number;
   totalPassengers: number;
   airlines: RouteAirlineOperator[];
+  isShared?: boolean;
 }
 
 export interface AirportConnectionDetail {

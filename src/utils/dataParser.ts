@@ -1053,6 +1053,16 @@ export function sanitizeAndEnrichRoutes(routes: FlightRoute[]): FlightRoute[] {
   });
 }
 
+export const CANONICAL_SHARED_CORRIDORS = new Set([
+  'MEX <-> TLC', 'MEX <-> NLU', 'MEX <-> MZT', 'CUL <-> MEX',
+  'GDL <-> OAX', 'GDL <-> TGZ', 'BJX <-> GDL', 'MTY <-> TGZ',
+  'MTY <-> MZT', 'CUL <-> PVR', 'CUN <-> QRO', 'MID <-> TLC',
+  'MID <-> QRO', 'CUL <-> NLU', 'CUL <-> SJD', 'MTY <-> OAX',
+  'BJX <-> MTY', 'GDL <-> VSA', 'OAX <-> QRO', 'MID <-> TIJ',
+  'HMO <-> MZT', 'CUL <-> QRO', 'OAX <-> TGZ', 'CUN <-> SJD',
+  'LAP <-> MEX', 'CZM <-> MEX', 'MEX <-> TAP'
+]);
+
 /**
  * Deduplicates routes into unique origin-destination corridors for Map Visualization Mode 3.
  * Groups all operating airlines and their authorization dates under each unique corridor.
@@ -1137,7 +1147,13 @@ export function getUniqueRouteCorridors(routes: FlightRoute[]): UniqueRouteCorri
     }
   }
 
-  return Array.from(corridorMap.values());
+  return Array.from(corridorMap.values()).map(corridor => {
+    const isShared = corridor.airlines.length > 1 || CANONICAL_SHARED_CORRIDORS.has(corridor.corridorKey);
+    return {
+      ...corridor,
+      isShared,
+    };
+  });
 }
 
 /**

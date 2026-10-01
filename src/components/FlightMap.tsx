@@ -43,6 +43,7 @@ interface FlightMapProps {
   selectedAirportCode?: string | null;
   onSelectAirport?: (airportCode: string) => void;
   onOpenAirportConnections?: (airportCode: string) => void;
+  onFilterAirportConnections?: (airportCode: string) => void;
   tileLayerKey?: 'dark' | 'light' | 'osm' | 'satellite' | 'topo';
   arcCurvature?: number;
   colorScheme?: 'airline' | 'density' | 'cyan' | 'traffic';
@@ -89,6 +90,7 @@ interface FlightMapProps {
   isComparePane?: boolean;
   compareAirlineColor?: string;
   className?: string;
+  isAirportConnectionsOpen?: boolean;
 }
 
 export const TILE_LAYERS = {
@@ -138,10 +140,10 @@ const KNOWN_AIRLINE_COLORS: Record<string, string> = {
   'aeroenlaces nacionales': '#10b981',
   'aeroenlaces': '#10b981',
   'aerolitoral': '#1d4ed8', // Royal Deep Blue (Aeroméxico Connect - distinct from Aeroméxico)
-  'link conexion aerea': '#f59e0b', // Amber Gold (TAR)
-  'link conexion': '#f59e0b',
-  'tar aerolineas': '#f59e0b',
-  'tar': '#f59e0b',
+  'link conexion aerea': '#6366f1', // Electric Indigo (TAR) - completely distinct from 2+ airlines amber
+  'link conexion': '#6366f1',
+  'tar aerolineas': '#6366f1',
+  'tar': '#6366f1',
   'aereo calafia': '#ec4899', // Bright Pink
   'calafia': '#ec4899',
   'estafeta carga aerea': '#dc2626', // Crimson Red
@@ -151,19 +153,19 @@ const KNOWN_AIRLINE_COLORS: Record<string, string> = {
   'aerotransportes mas de carga': '#8b5cf6', // Indigo Violet (MasAir)
   'mas de carga': '#8b5cf6',
   'masair': '#8b5cf6',
-  'tm aerolineas': '#f97316', // Vibrant Orange
-  'tm': '#f97316',
+  'tm aerolineas': '#64748b', // Slate Steel - completely distinct from 2+ airlines amber
+  'tm': '#64748b',
   'aerotransporte de carga union': '#e11d48', // Ruby Rose
   'carga union': '#e11d48',
   'aerolinea del estado mexicano': '#06b6d4', // Pure Cyan (Mexicana)
   'mexicana': '#06b6d4',
-  'magnicharters': '#eab308', // Sunflower Yellow (distinct from red and amber)
+  'magnicharters': '#c026d3', // Deep Fuchsia (distinct from red, amber and gold)
   'interjet': '#3b82f6', // Cobalt Blue
   'aerus': '#84cc16', // Lime Green (distinct from emerald)
-  'aeromar': '#6366f1', // Electric Indigo
+  'aeromar': '#4f46e5', // Deep Indigo
   'delta': '#b91c1c',
   'united': '#0369a1',
-  'american': '#64748b',
+  'american': '#475569',
   'copa': '#0ea5e9',
 };
 
@@ -171,18 +173,18 @@ const DYNAMIC_PALETTE = [
   '#0284c7', // Sky
   '#a855f7', // Purple
   '#10b981', // Emerald
-  '#f59e0b', // Amber
+  '#6366f1', // Indigo (replacing Amber so never clashes with 2+ aerolíneas)
   '#dc2626', // Crimson Red
   '#06b6d4', // Cyan
   '#ec4899', // Pink
   '#14b8a6', // Teal
   '#8b5cf6', // Violet
-  '#f97316', // Orange
+  '#64748b', // Slate Steel (replacing Orange)
   '#84cc16', // Lime
   '#1d4ed8', // Royal Blue
   '#d946ef', // Fuchsia
   '#e11d48', // Rose
-  '#eab308', // Yellow
+  '#0d9488', // Dark Teal (replacing Yellow)
 ];
 
 export function getAirlineColor(airline: string, customColors?: Record<string, string>): string {
@@ -224,6 +226,7 @@ export const FlightMap: React.FC<FlightMapProps> = ({
   selectedAirportCode,
   onSelectAirport,
   onOpenAirportConnections,
+  onFilterAirportConnections,
   tileLayerKey = 'dark',
   arcCurvature = 0.14,
   colorScheme = 'airline',
@@ -268,6 +271,7 @@ export const FlightMap: React.FC<FlightMapProps> = ({
   isComparePane = false,
   compareAirlineColor,
   className = '',
+  isAirportConnectionsOpen = false,
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -280,6 +284,10 @@ export const FlightMap: React.FC<FlightMapProps> = ({
   const activeOpenPopupCodeRef = useRef<string | null>(null);
   const onOpenAirportConnectionsRef = useRef(onOpenAirportConnections);
   onOpenAirportConnectionsRef.current = onOpenAirportConnections;
+  const onFilterAirportConnectionsRef = useRef(onFilterAirportConnections);
+  onFilterAirportConnectionsRef.current = onFilterAirportConnections;
+  const lastClickedAirportRef = useRef<{ code: string; time: number } | null>(null);
+  const lastFilterTriggerTimeRef = useRef<number>(0);
   const onSelectAirportRef = useRef(onSelectAirport);
   onSelectAirportRef.current = onSelectAirport;
   const onSelectRouteRef = useRef(onSelectRoute);
@@ -786,10 +794,25 @@ export const FlightMap: React.FC<FlightMapProps> = ({
     return { single, multi };
   }, [routes, corridorAirlinesSetMap]);
 
-  // Mode 1: Count of airports operated by 2+ airlines vs 1 airline, and airports count per airline
+  // Mode 1: Count of airports operated by 2+ airlines vs 1 airline, and airports count per airline respecting active filters
   const mode1AirportColorStats = useMemo(() => {
+    const isNone = selectedAirlines.includes('__NONE__');
+    if (isNone) {
+      return {
+        multiAirports: 0,
+        singleAirports: 0,
+        airportsPerAirline: {},
+        totalAirports: 0,
+        totalAirlines: 0,
+        targetAirports: new Set<string>()
+      };
+    }
+
+    const effectiveAirlinesSet = selectedAirlines.length > 0 ? new Set(selectedAirlines) : null;
+    const targetRoutes = routes.filter(r => !effectiveAirlinesSet || effectiveAirlinesSet.has(r.airline));
+
     const airportAirlinesMap = new Map<string, Set<string>>();
-    baseRoutesForAirlines.forEach(r => {
+    targetRoutes.forEach(r => {
       if (!r.airline) return;
       if (r.originCode) {
         if (!airportAirlinesMap.has(r.originCode)) airportAirlinesMap.set(r.originCode, new Set());
@@ -800,6 +823,15 @@ export const FlightMap: React.FC<FlightMapProps> = ({
         airportAirlinesMap.get(r.destCode)!.add(r.airline);
       }
     });
+
+    if (selectedTopN && topAirportsRankMap) {
+      Array.from(airportAirlinesMap.keys()).forEach(code => {
+        const rank = topAirportsRankMap.get(code);
+        if (!rank || rank > selectedTopN) {
+          airportAirlinesMap.delete(code);
+        }
+      });
+    }
 
     let multiAirports = 0;
     let singleAirports = 0;
@@ -816,8 +848,16 @@ export const FlightMap: React.FC<FlightMapProps> = ({
       });
     });
 
-    return { multiAirports, singleAirports, airportsPerAirline };
-  }, [baseRoutesForAirlines]);
+    const totalAirports = airportAirlinesMap.size;
+    const totalAirlines = isNone
+      ? 0
+      : selectedAirlines.length > 0
+      ? selectedAirlines.length
+      : (availableAirlines && availableAirlines.length > 0 ? availableAirlines.length : mode2AirlinesCount.length);
+    const targetAirports = new Set(airportAirlinesMap.keys());
+
+    return { multiAirports, singleAirports, airportsPerAirline, totalAirports, totalAirlines, targetAirports };
+  }, [routes, selectedAirlines, selectedTopN, topAirportsRankMap, availableAirlines, mode2AirlinesCount.length]);
 
   // Compute active airport connections for Mode 1 if an airport is selected
   const activeAirportConnections = useMemo(() => {
@@ -1020,11 +1060,23 @@ export const FlightMap: React.FC<FlightMapProps> = ({
     const mode2RouteEntries: Mode2RouteEntry[] = [];
 
     if ((mapMode === 'unique_routes' || mapMode === 'routes_by_airline') && showFlightArcs) {
+      const topNCodesSet = selectedTopN && topAirportsRankMap
+        ? new Set(
+            Array.from(topAirportsRankMap.entries())
+              .filter(([_, rank]) => rank <= selectedTopN)
+              .map(([code]) => code)
+          )
+        : null;
+
       if (uniqueAnalysisMode === 'general') {
         // ==========================================
         // SUBMODO A: ANÁLISIS GENERAL (346 RUTAS CONSOLIDADAS)
         // ==========================================
-        uniqueCorridors.forEach(corridor => {
+        const corridorsToRender = topNCodesSet
+          ? uniqueCorridors.filter(c => topNCodesSet.has(c.originCode) && topNCodesSet.has(c.destCode))
+          : uniqueCorridors;
+
+        corridorsToRender.forEach(corridor => {
           const arcPoints = generateGreatCircleArc(
             [corridor.originLat, corridor.originLng],
             [corridor.destLat, corridor.destLng],
@@ -1161,9 +1213,15 @@ export const FlightMap: React.FC<FlightMapProps> = ({
         // Rutas compartidas en DORADO (personalizable), rutas exclusivas por aerolínea.
         // Sujeto a los filtros establecidos de selección de aerolíneas.
         // ==========================================
-        const routesToRender = mode2SelectedAirport
+        let routesToRender = mode2SelectedAirport
           ? routes.filter(r => r.originCode === mode2SelectedAirport || r.destCode === mode2SelectedAirport)
           : routes;
+
+        if (topNCodesSet) {
+          routesToRender = routesToRender.filter(
+            r => topNCodesSet.has(r.originCode) && topNCodesSet.has(r.destCode)
+          );
+        }
 
         routesToRender.forEach(route => {
           const arcPoints = generateGreatCircleArc(
@@ -1393,6 +1451,16 @@ export const FlightMap: React.FC<FlightMapProps> = ({
         }
 
         const isMode1 = mapMode === 'airports';
+        if (isMode1) {
+          const isNone = selectedAirlines.includes('__NONE__');
+          if (isNone) return;
+          // When 1 or more airlines are selected in Mode 1, only show airports served by those airlines
+          if (selectedAirlines.length > 0) {
+            const hasMatch = mode1AirportColorStats.targetAirports.has(officialCode) || mode1AirportColorStats.targetAirports.has(airport.code);
+            if (!hasMatch) return;
+          }
+        }
+
         const isSelectedOrigin = isMode1 && (selectedAirportCode === airport.code || selectedAirportCode === officialCode);
         const isMajorHub = ['MEX', 'CUN', 'GDL', 'MTY', 'TIJ', 'NLU'].includes(officialCode);
 
@@ -1542,10 +1610,20 @@ export const FlightMap: React.FC<FlightMapProps> = ({
             </div>
           `;
 
+          let tooltipDirection: 'top' | 'bottom' | 'left' | 'right' = 'top';
+          let tooltipOffset: [number, number] = [0, -radius - 4];
+          if (officialCode === 'CSL') {
+            tooltipDirection = 'bottom';
+            tooltipOffset = [0, radius + 4];
+          } else if (officialCode === 'SJD') {
+            tooltipDirection = 'top';
+            tooltipOffset = [0, -radius - 4];
+          }
+
           marker.bindTooltip(singleBoxHtml, {
             permanent: true,
-            direction: 'top',
-            offset: [0, -radius - 4],
+            direction: tooltipDirection,
+            offset: tooltipOffset,
             className: 'permanent-iata-tooltip',
           });
         }
@@ -1625,12 +1703,39 @@ export const FlightMap: React.FC<FlightMapProps> = ({
           }
         });
 
-        // Click handlers: 1 click immediately opens popup in all modes (in Mode 1 no routes are illuminated; in Mode 2 routes are illuminated and popup stays open)
+        // Click handlers: 1 click opens popup with general info; in Mode 2, second click on same airport closes popup and filters connections in the map
         marker.on('click', (e) => {
           if (e.originalEvent) {
             L.DomEvent.stopPropagation(e.originalEvent);
           }
+
+          const isMode2 = mapMode === 'unique_routes' || mapMode === 'routes_by_airline';
+          const now = Date.now();
+          const lastClick = lastClickedAirportRef.current;
+
+          // Check if this is the 2nd click on the SAME airport in Mode 2:
+          // Either the popup is currently open for this airport,
+          // OR this same airport was clicked recently (within 4000ms)
+          const isSecondClickOnSame =
+            isMode2 &&
+            lastClick?.code === officialCode &&
+            (activeOpenPopupCodeRef.current === officialCode || (now - lastClick.time < 4000));
+
+          if (isSecondClickOnSame) {
+            marker.closePopup();
+            activeOpenPopupCodeRef.current = null;
+            lastClickedAirportRef.current = null;
+            lastFilterTriggerTimeRef.current = now;
+
+            if (onFilterAirportConnectionsRef.current) {
+              onFilterAirportConnectionsRef.current(officialCode);
+            }
+            return;
+          }
+
+          // First click: opens popup with general information
           activeOpenPopupCodeRef.current = officialCode;
+          lastClickedAirportRef.current = { code: officialCode, time: now };
           if (mapMode === 'routes_by_airline') {
             setMode2SelectedAirport(officialCode);
           }
@@ -1642,8 +1747,29 @@ export const FlightMap: React.FC<FlightMapProps> = ({
             L.DomEvent.stopPropagation(e.originalEvent);
             L.DomEvent.preventDefault(e.originalEvent);
           }
-          if (onOpenAirportConnectionsRef.current) {
-            onOpenAirportConnectionsRef.current(officialCode);
+
+          const isMode2 = mapMode === 'unique_routes' || mapMode === 'routes_by_airline';
+          if (isMode2) {
+            const now = Date.now();
+            marker.closePopup();
+            activeOpenPopupCodeRef.current = null;
+            lastClickedAirportRef.current = null;
+            if (now - lastFilterTriggerTimeRef.current > 400) {
+              lastFilterTriggerTimeRef.current = now;
+              if (onFilterAirportConnectionsRef.current) {
+                onFilterAirportConnectionsRef.current(officialCode);
+              }
+            }
+          } else {
+            if (onOpenAirportConnectionsRef.current) {
+              onOpenAirportConnectionsRef.current(officialCode);
+            }
+          }
+        });
+
+        marker.on('popupclose', () => {
+          if (activeOpenPopupCodeRef.current === officialCode) {
+            activeOpenPopupCodeRef.current = null;
           }
         });
 
@@ -1742,7 +1868,9 @@ export const FlightMap: React.FC<FlightMapProps> = ({
       <div id={id} ref={mapContainerRef} className="w-full h-full z-0" />
 
       {/* Floating Map Navigation Controls */}
-      <div className={`absolute ${isComparePane ? 'top-4' : 'top-14'} right-4 z-[400] flex flex-col gap-1.5 bg-slate-900/90 backdrop-blur-md p-1.5 rounded-xl border border-slate-800 shadow-2xl`}>
+      <div className={`absolute ${isComparePane ? 'top-4' : 'top-14'} right-4 ${
+        isAirportConnectionsOpen ? 'z-10 opacity-20 pointer-events-none' : 'z-[400]'
+      } flex flex-col gap-1.5 bg-slate-900/90 backdrop-blur-md p-1.5 rounded-xl border border-slate-800 shadow-2xl transition-all duration-200`}>
         <button
           id={`${id}-btn-zoom-in`}
           onClick={handleZoomIn}
@@ -1937,16 +2065,18 @@ export const FlightMap: React.FC<FlightMapProps> = ({
                   top: `${legendPos.y}px`,
                   right: 'auto',
                   bottom: 'auto',
-                  zIndex: 400,
+                  zIndex: isAirportConnectionsOpen ? 10 : 400,
                 }
               : {
                   position: 'absolute',
                   top: isComparePane ? '1rem' : '3.5rem',
                   right: '4.25rem',
-                  zIndex: 400,
+                  zIndex: isAirportConnectionsOpen ? 10 : 400,
                 }
           }
-          className={`flex flex-col items-end ${isDraggingLegend ? 'cursor-grabbing opacity-95 select-none' : ''}`}
+          className={`flex flex-col items-end ${isDraggingLegend ? 'cursor-grabbing opacity-95 select-none' : ''} ${
+            isAirportConnectionsOpen ? 'pointer-events-none opacity-20' : ''
+          } transition-opacity duration-200`}
         >
           {!isRightLegendExpanded ? (
             <div className="flex items-center gap-1 bg-slate-900/95 hover:bg-slate-850 text-cyan-300 border border-slate-700/80 rounded-xl p-1 shadow-2xl backdrop-blur-md">
@@ -1963,13 +2093,13 @@ export const FlightMap: React.FC<FlightMapProps> = ({
                 onClick={() => setIsRightLegendExpanded(true)}
                 title={
                   mapMode === 'airports'
-                    ? 'Ver Código Cromático de Aeropuertos'
-                    : 'Ver Rutas Autorizadas'
+                    ? 'Ver Nomenclatura y Código Cromático de Aeropuertos'
+                    : 'Ver Nomenclatura y Código Cromático de Rutas Autorizadas'
                 }
                 className="px-2.5 py-1.5 flex items-center gap-2 text-xs font-bold text-cyan-300 hover:text-white transition cursor-pointer"
               >
                 <Palette className="w-3.5 h-3.5 text-cyan-400" />
-                <span>{mapMode === 'airports' ? 'Código Cromático de Aeropuertos' : 'Rutas Autorizadas'}</span>
+                <span>{mapMode === 'airports' ? 'Nomenclatura y Código Cromático' : 'Rutas Autorizadas'}</span>
                 <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
               </button>
             </div>
@@ -2075,7 +2205,11 @@ export const FlightMap: React.FC<FlightMapProps> = ({
                   </div>
                   <div className="text-[9px] text-cyan-300 font-mono truncate">
                     {mapMode === 'airports'
-                      ? `${airports.length} aeropuertos • ${mode2AirlinesCount.length} aerolíneas`
+                      ? (() => {
+                          const activeAirports = mode1AirportColorStats.totalAirports;
+                          const activeAirlines = mode1AirportColorStats.totalAirlines;
+                          return `${activeAirports} aeropuerto${activeAirports === 1 ? '' : 's'} • ${activeAirlines} aerolínea${activeAirlines === 1 ? '' : 's'}`;
+                        })()
                       : uniqueAnalysisMode === 'general'
                       ? `${uniqueCorridors.length || 346} rutas consolidadas (${singleCorridorsCount} exclusivas • ${multiCorridorsCount} compartidas)`
                       : `${routes.length} rutas autorizadas • ${mode2AirlinesCount.length} aerolíneas`}
@@ -2123,7 +2257,9 @@ export const FlightMap: React.FC<FlightMapProps> = ({
 
                   {/* Header for individual airlines */}
                   <div className="flex items-center justify-between text-[10px] font-bold text-slate-400 uppercase tracking-wider pt-1">
-                    <span>Aerolíneas ({mode2AirlinesCount.length}):</span>
+                    <span>
+                      Aerolíneas ({selectedAirlines.includes('__NONE__') ? 0 : selectedAirlines.length > 0 ? selectedAirlines.length : mode2AirlinesCount.length}):
+                    </span>
                     <div className="flex items-center gap-1.5">
                       <button
                         type="button"

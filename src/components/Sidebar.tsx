@@ -710,90 +710,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         </button>
                       </div>
                     </div>
-
-                    <p className="text-[11px] text-slate-300 leading-relaxed border-t border-slate-800/80 pt-2">
-                      {uniqueAnalysisMode === 'general'
-                        ? 'a) Análisis general: Muestra las 346 rutas consolidadas clasificadas por 1 sola aerolínea autorizada (177 de autorización única) vs 2 o más aerolíneas autorizadas (169 compartidas).'
-                        : 'b) Análisis específico: Muestra las 655 rutas autorizadas y las 13 aerolíneas. Todas las rutas compartidas se marcan con color dorado con iluminación y las demás rutas con colores propios por aerolínea, sujeto a los filtros establecidos.'}
-                    </p>
                   </div>
                 )}
               </div>
             )}
-
-            {/* ================= CLAVES IATA (CON NOMBRES / SIN NOMBRES Y TAMAÑO) ================= */}
-            <div className="bg-slate-950/80 border border-slate-800 p-3 rounded-xl space-y-2.5">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                  <Tag className="w-3.5 h-3.5 text-cyan-400" />
-                  Claves IATA de Aeropuertos
-                </span>
-                <span className="text-[10px] text-cyan-400 font-semibold font-mono">
-                  {showAirportLabels ? 'Con nombres' : 'Sin nombres'}
-                </span>
-              </div>
-
-              <div className="grid grid-cols-2 gap-1.5 bg-slate-900/90 p-1 rounded-xl border border-slate-800 text-xs">
-                <button
-                  type="button"
-                  onClick={() => onToggleAirportLabels && onToggleAirportLabels(true)}
-                  className={`py-1.5 px-2 rounded-lg font-bold transition flex items-center justify-center cursor-pointer ${
-                    showAirportLabels
-                      ? 'bg-cyan-500 text-slate-950 shadow-md ring-1 ring-cyan-400'
-                      : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  Con nombres
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onToggleAirportLabels && onToggleAirportLabels(false)}
-                  className={`py-1.5 px-2 rounded-lg font-bold transition flex items-center justify-center cursor-pointer ${
-                    !showAirportLabels
-                      ? 'bg-cyan-500 text-slate-950 shadow-md ring-1 ring-cyan-400'
-                      : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  Sin nombres
-                </button>
-              </div>
-
-              {showAirportLabels && (
-                <div className="space-y-1 pt-1.5 border-t border-slate-800/80">
-                  <div className="flex items-center justify-between text-[10px] text-slate-400 font-semibold">
-                    <span>Tamaño de la clave IATA:</span>
-                    <span className="text-cyan-300 font-mono font-bold">{iataFontSize ?? 11}px</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      disabled={(iataFontSize ?? 11) <= 8}
-                      onClick={() => onChangeIataFontSize && onChangeIataFontSize(Math.max(8, (iataFontSize ?? 11) - 1))}
-                      className="px-2 py-0.5 bg-slate-900 border border-slate-700 hover:border-cyan-500 rounded text-xs font-bold text-slate-300 disabled:opacity-40 cursor-pointer"
-                    >
-                      A-
-                    </button>
-                    <input
-                      type="range"
-                      min={8}
-                      max={18}
-                      step={1}
-                      value={iataFontSize ?? 11}
-                      onChange={(e) => onChangeIataFontSize && onChangeIataFontSize(Number(e.target.value))}
-                      className="flex-1 accent-cyan-500 cursor-pointer h-1.5 bg-slate-800 rounded-lg"
-                    />
-                    <button
-                      type="button"
-                      disabled={(iataFontSize ?? 11) >= 18}
-                      onClick={() => onChangeIataFontSize && onChangeIataFontSize(Math.min(18, (iataFontSize ?? 11) + 1))}
-                      className="px-2 py-0.5 bg-slate-900 border border-slate-700 hover:border-cyan-500 rounded text-xs font-bold text-slate-300 disabled:opacity-40 cursor-pointer"
-                    >
-                      A+
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
 
             {/* ================= APARTADO TOP 1 AL 15 AEROPUERTOS POR RUTAS AUTORIZADAS ================= */}
             <div className="bg-slate-950/80 border border-slate-800 p-3 rounded-xl space-y-3">
@@ -977,136 +897,138 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </div>
             )}
 
-            {/* Ciudad 1 & Ciudad 2 Bilateral Selectors */}
-            <div className="space-y-3 p-3 rounded-xl bg-slate-950/80 border border-slate-800">
-              <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
-                <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
-                  <MapPin className="w-3.5 h-3.5 text-cyan-400" />
-                  Conexión Bilateral de Ciudades
-                </span>
-                {(filters.selectedOrigins.length > 0 || filters.selectedDestinations.length > 0) && (
+            {/* Ciudad 1 & Ciudad 2 Bilateral Selectors — Only in Mode 2 (unique_routes), removed from Mode 1 (airports) */}
+            {mapMode !== 'airports' && (
+              <div className="space-y-3 p-3 rounded-xl bg-slate-950/80 border border-slate-800">
+                <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+                  <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                    <MapPin className="w-3.5 h-3.5 text-cyan-400" />
+                    Conexión Bilateral de Ciudades
+                  </span>
+                  {(filters.selectedOrigins.length > 0 || filters.selectedDestinations.length > 0) && (
+                    <button
+                      type="button"
+                      onClick={handleClearCities}
+                      className="text-[10px] text-slate-400 hover:text-amber-400 flex items-center gap-1 transition cursor-pointer font-medium"
+                      title="Restablecer ambas ciudades"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                      Limpiar
+                    </button>
+                  )}
+                </div>
+
+                {/* Ciudad 1 */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-slate-300 font-bold text-xs flex items-center gap-1.5">
+                      <span className="w-4 h-4 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-700 flex items-center justify-center text-[10px] font-mono">1</span>
+                      Ciudad 1
+                    </label>
+                    {filters.selectedOrigins[0] && (
+                      <button
+                        type="button"
+                        onClick={() => handleSelectCiudad1('')}
+                        className="text-[10px] text-slate-400 hover:text-rose-400 flex items-center gap-0.5 cursor-pointer"
+                        title="Quitar Ciudad 1"
+                      >
+                        <X className="w-3 h-3" />
+                        Quitar
+                      </button>
+                    )}
+                  </div>
+                  <select
+                    value={filters.selectedOrigins[0] || ''}
+                    onChange={(e) => handleSelectCiudad1(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 text-xs focus:outline-none focus:border-cyan-500 transition cursor-pointer"
+                  >
+                    <option value="">
+                      {connectedToC2
+                        ? `-- Conexiones con ${filters.selectedDestinations[0]} (${optionsCiudad1.length}) --`
+                        : '-- Selecciona Ciudad 1 (Todas) --'}
+                    </option>
+                    {optionsCiudad1.map((c) => (
+                      <option key={c.code} value={c.code}>
+                        {c.label}
+                      </option>
+                    ))}
+                  </select>
+                  {filters.selectedOrigins[0] && connectedToC1 && (
+                    <div className="text-[10px] text-cyan-400 mt-1 flex items-center gap-1">
+                      <span>✓ {connectedToC1.size} destinos conectados para Ciudad 2</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Swap Button */}
+                <div className="flex justify-center -my-1">
                   <button
                     type="button"
-                    onClick={handleClearCities}
-                    className="text-[10px] text-slate-400 hover:text-amber-400 flex items-center gap-1 transition cursor-pointer font-medium"
-                    title="Restablecer ambas ciudades"
+                    onClick={handleSwapCities}
+                    disabled={!filters.selectedOrigins[0] && !filters.selectedDestinations[0]}
+                    title="Intercambiar Ciudad 1 y Ciudad 2"
+                    className="p-1.5 rounded-lg bg-slate-900 border border-slate-700 hover:border-cyan-500 hover:bg-cyan-950/60 text-slate-400 hover:text-cyan-300 transition disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex items-center gap-1 text-[11px]"
                   >
-                    <RotateCcw className="w-3 h-3" />
-                    Limpiar
+                    <ArrowLeftRight className="w-3.5 h-3.5" />
+                    <span className="text-[10px] font-semibold">Intercambiar</span>
                   </button>
-                )}
-              </div>
+                </div>
 
-              {/* Ciudad 1 */}
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-slate-300 font-bold text-xs flex items-center gap-1.5">
-                    <span className="w-4 h-4 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-700 flex items-center justify-center text-[10px] font-mono">1</span>
-                    Ciudad 1
-                  </label>
-                  {filters.selectedOrigins[0] && (
-                    <button
-                      type="button"
-                      onClick={() => handleSelectCiudad1('')}
-                      className="text-[10px] text-slate-400 hover:text-rose-400 flex items-center gap-0.5 cursor-pointer"
-                      title="Quitar Ciudad 1"
-                    >
-                      <X className="w-3 h-3" />
-                      Quitar
-                    </button>
+                {/* Ciudad 2 */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-slate-300 font-bold text-xs flex items-center gap-1.5">
+                      <span className="w-4 h-4 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-700 flex items-center justify-center text-[10px] font-mono">2</span>
+                      Ciudad 2
+                    </label>
+                    {filters.selectedDestinations[0] && (
+                      <button
+                        type="button"
+                        onClick={() => handleSelectCiudad2('')}
+                        className="text-[10px] text-slate-400 hover:text-rose-400 flex items-center gap-0.5 cursor-pointer"
+                        title="Quitar Ciudad 2"
+                      >
+                        <X className="w-3 h-3" />
+                        Quitar
+                      </button>
+                    )}
+                  </div>
+                  <select
+                    value={filters.selectedDestinations[0] || ''}
+                    onChange={(e) => handleSelectCiudad2(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 text-xs focus:outline-none focus:border-cyan-500 transition cursor-pointer"
+                  >
+                    <option value="">
+                      {connectedToC1
+                        ? `-- Conexiones con ${filters.selectedOrigins[0]} (${optionsCiudad2.length}) --`
+                        : '-- Selecciona Ciudad 2 (Todas) --'}
+                    </option>
+                    {optionsCiudad2.map((c) => (
+                      <option key={c.code} value={c.code}>
+                        {c.label}
+                      </option>
+                    ))}
+                  </select>
+                  {filters.selectedDestinations[0] && connectedToC2 && (
+                    <div className="text-[10px] text-cyan-400 mt-1 flex items-center gap-1">
+                      <span>✓ {connectedToC2.size} destinos conectados para Ciudad 1</span>
+                    </div>
                   )}
                 </div>
-                <select
-                  value={filters.selectedOrigins[0] || ''}
-                  onChange={(e) => handleSelectCiudad1(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 text-xs focus:outline-none focus:border-cyan-500 transition cursor-pointer"
-                >
-                  <option value="">
-                    {connectedToC2
-                      ? `-- Conexiones con ${filters.selectedDestinations[0]} (${optionsCiudad1.length}) --`
-                      : '-- Selecciona Ciudad 1 (Todas) --'}
-                  </option>
-                  {optionsCiudad1.map((c) => (
-                    <option key={c.code} value={c.code}>
-                      {c.label}
-                    </option>
-                  ))}
-                </select>
-                {filters.selectedOrigins[0] && connectedToC1 && (
-                  <div className="text-[10px] text-cyan-400 mt-1 flex items-center gap-1">
-                    <span>✓ {connectedToC1.size} destinos conectados para Ciudad 2</span>
+
+                {/* Bilateral status indicator */}
+                {filters.selectedOrigins[0] && filters.selectedDestinations[0] && (
+                  <div className="p-2 rounded-lg bg-emerald-950/60 border border-emerald-500/50 text-[11px] text-emerald-300 flex items-center justify-between">
+                    <span className="font-bold">
+                      {filters.selectedOrigins[0]} ⇄ {filters.selectedDestinations[0]}
+                    </span>
+                    <span className="text-[10px] bg-emerald-900/80 px-1.5 py-0.5 rounded text-emerald-200 font-semibold">
+                      Conexión Bilateral Activa
+                    </span>
                   </div>
                 )}
               </div>
-
-              {/* Swap Button */}
-              <div className="flex justify-center -my-1">
-                <button
-                  type="button"
-                  onClick={handleSwapCities}
-                  disabled={!filters.selectedOrigins[0] && !filters.selectedDestinations[0]}
-                  title="Intercambiar Ciudad 1 y Ciudad 2"
-                  className="p-1.5 rounded-lg bg-slate-900 border border-slate-700 hover:border-cyan-500 hover:bg-cyan-950/60 text-slate-400 hover:text-cyan-300 transition disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex items-center gap-1 text-[11px]"
-                >
-                  <ArrowLeftRight className="w-3.5 h-3.5" />
-                  <span className="text-[10px] font-semibold">Intercambiar</span>
-                </button>
-              </div>
-
-              {/* Ciudad 2 */}
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-slate-300 font-bold text-xs flex items-center gap-1.5">
-                    <span className="w-4 h-4 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-700 flex items-center justify-center text-[10px] font-mono">2</span>
-                    Ciudad 2
-                  </label>
-                  {filters.selectedDestinations[0] && (
-                    <button
-                      type="button"
-                      onClick={() => handleSelectCiudad2('')}
-                      className="text-[10px] text-slate-400 hover:text-rose-400 flex items-center gap-0.5 cursor-pointer"
-                      title="Quitar Ciudad 2"
-                    >
-                      <X className="w-3 h-3" />
-                      Quitar
-                    </button>
-                  )}
-                </div>
-                <select
-                  value={filters.selectedDestinations[0] || ''}
-                  onChange={(e) => handleSelectCiudad2(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 text-xs focus:outline-none focus:border-cyan-500 transition cursor-pointer"
-                >
-                  <option value="">
-                    {connectedToC1
-                      ? `-- Conexiones con ${filters.selectedOrigins[0]} (${optionsCiudad2.length}) --`
-                      : '-- Selecciona Ciudad 2 (Todas) --'}
-                  </option>
-                  {optionsCiudad2.map((c) => (
-                    <option key={c.code} value={c.code}>
-                      {c.label}
-                    </option>
-                  ))}
-                </select>
-                {filters.selectedDestinations[0] && connectedToC2 && (
-                  <div className="text-[10px] text-cyan-400 mt-1 flex items-center gap-1">
-                    <span>✓ {connectedToC2.size} destinos conectados para Ciudad 1</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Bilateral status indicator */}
-              {filters.selectedOrigins[0] && filters.selectedDestinations[0] && (
-                <div className="p-2 rounded-lg bg-emerald-950/60 border border-emerald-500/50 text-[11px] text-emerald-300 flex items-center justify-between">
-                  <span className="font-bold">
-                    {filters.selectedOrigins[0]} ⇄ {filters.selectedDestinations[0]}
-                  </span>
-                  <span className="text-[10px] bg-emerald-900/80 px-1.5 py-0.5 rounded text-emerald-200 font-semibold">
-                    Conexión Bilateral Activa
-                  </span>
-                </div>
-              )}
-            </div>
+            )}
           </div>
         )}
 
@@ -1149,66 +1071,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </div>
             </div>
 
-            {/* Color Scheme & Custom Airlines Palette */}
-            <div>
-              <label className="block text-slate-300 font-semibold mb-2">Esquema de Color de Rutas</label>
-              <select
-                value={colorScheme}
-                onChange={(e) => onColorSchemeChange(e.target.value as any)}
-                className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-cyan-500"
-              >
-                <option value="airline">Por Aerolínea (Colores Personalizados / Oficiales)</option>
-                <option value="cyan">Monocromático Cyan Radar</option>
-              </select>
-            </div>
-
-            {/* Dedicated Custom Airline Color Manager in Visuals */}
-            {colorScheme === 'airline' && availableAirlines.length > 0 && (
-              <div className="bg-slate-950/70 p-3 rounded-xl border border-cyan-900/40 space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-cyan-300 flex items-center gap-1.5">
-                    <Palette className="w-3.5 h-3.5 text-cyan-400" />
-                    Personalizar Colores de Aerolíneas
-                  </span>
-                  {onResetAirlineColors && Object.keys(customAirlineColors).length > 0 && (
-                    <button
-                      onClick={onResetAirlineColors}
-                      className="text-[10px] text-amber-400 hover:underline cursor-pointer"
-                    >
-                      Restablecer
-                    </button>
-                  )}
-                </div>
-                <div className="grid grid-cols-1 gap-1.5 max-h-48 overflow-y-auto pr-1">
-                  {availableAirlines.map((airline) => {
-                    const color = getAirlineColor(airline, customAirlineColors);
-                    return (
-                      <div
-                        key={airline}
-                        className="flex items-center justify-between bg-slate-900/90 px-2.5 py-1.5 rounded-lg border border-slate-800"
-                      >
-                        <span className="text-xs text-slate-200 font-medium truncate max-w-[150px]">
-                          {airline}
-                        </span>
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="color"
-                            value={color}
-                            onChange={(e) => onUpdateAirlineColor && onUpdateAirlineColor(airline, e.target.value)}
-                            className="w-6 h-6 rounded cursor-pointer border-0 bg-transparent"
-                            title={`Cambiar color de ${airline}`}
-                          />
-                          <span className="text-[10px] font-mono text-slate-400 uppercase">
-                            {color}
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
             {/* Great Circle Arc Curvature */}
             <div>
               <div className="flex items-center justify-between mb-1">
@@ -1229,39 +1091,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <p className="text-[10px] text-slate-500 mt-1">
                 Ajusta la altura del arco de gran círculo para simular rutas aéreas tridimensionales.
               </p>
-            </div>
-
-            {/* Layer Toggles */}
-            <div className="bg-slate-950/60 p-3 rounded-xl border border-slate-800 space-y-3">
-              <label className="flex items-center justify-between cursor-pointer">
-                <span className="font-medium text-slate-200">Mostrar Arcos de Rutas</span>
-                <input
-                  type="checkbox"
-                  checked={showFlightArcs}
-                  onChange={(e) => onToggleFlightArcs(e.target.checked)}
-                  className="rounded border-slate-700 text-cyan-500 focus:ring-cyan-500 bg-slate-900"
-                />
-              </label>
-
-              <label className="flex items-center justify-between cursor-pointer">
-                <span className="font-medium text-slate-200">Mostrar Marcadores de Aeropuertos</span>
-                <input
-                  type="checkbox"
-                  checked={showAirports}
-                  onChange={(e) => onToggleAirports(e.target.checked)}
-                  className="rounded border-slate-700 text-cyan-500 focus:ring-cyan-500 bg-slate-900"
-                />
-              </label>
-
-              <label className="flex items-center justify-between cursor-pointer">
-                <span className="font-medium text-slate-200">Etiquetas IATA en Aeropuertos</span>
-                <input
-                  type="checkbox"
-                  checked={showAirportLabels}
-                  onChange={(e) => onToggleAirportLabels(e.target.checked)}
-                  className="rounded border-slate-700 text-cyan-500 focus:ring-cyan-500 bg-slate-900"
-                />
-              </label>
             </div>
           </div>
         )}

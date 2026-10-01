@@ -50,16 +50,16 @@ export const Header: React.FC<HeaderProps> = ({
                 Dirección Ejecutiva de Transporte y Control Aeronáutico
               </p>
               <p className="text-[8.5px] md:text-[9px] font-medium text-cyan-400 whitespace-nowrap">
-                Coordinación de Concesiones y Transporte Aéreo
+                Coordinación de Concesiones de Transporte Aéreo
               </p>
             </div>
           </div>
           <div className="h-6 w-px bg-slate-800 shrink-0 hidden sm:block"></div>
-          <div className="min-w-0">
-            <h2 className="text-xs sm:text-[13px] md:text-[14px] lg:text-[15px] font-extrabold text-white tracking-tight flex items-center gap-1.5 whitespace-nowrap truncate">
+          <div className="flex flex-col justify-center min-w-0">
+            <h2 className="text-[10.5px] sm:text-[11.5px] md:text-[12px] lg:text-[13px] font-extrabold text-white tracking-tight leading-snug flex items-center gap-1.5">
               <span className="text-cyan-400">Observatorio Gráfico de Rutas Aéreas Nacionales Autorizadas</span>
             </h2>
-            <p className="text-[8.5px] sm:text-[9.5px] text-slate-400 font-medium whitespace-nowrap mt-0.5 truncate">
+            <p className="text-[8px] sm:text-[8.5px] md:text-[9px] text-slate-400 font-medium leading-tight mt-0.5">
               (con base en información georreferenciada)
             </p>
           </div>

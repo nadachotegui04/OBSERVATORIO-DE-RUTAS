@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { X, Search, Plane, Calendar, Building2, MapPin, ArrowUpRight, Users, Navigation } from 'lucide-react';
+import { X, Search, Plane, Calendar, Building2, MapPin, ArrowUpRight, Users } from 'lucide-react';
 import { FlightRoute, AirportConnectionDetail } from '../types';
 import { getAirportConnections } from '../utils/dataParser';
 import { resolveAirport, findAirportByCoordinates } from '../data/mexicoDemoData';
@@ -74,7 +74,7 @@ export const AirportConnectionsModal: React.FC<AirportConnectionsModalProps> = (
   return (
     <div
       id="airport-connections-modal"
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in"
+      className="fixed inset-0 z-[1500] flex items-center justify-center p-3 sm:p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in"
       onClick={onClose}
     >
       <div
@@ -131,7 +131,6 @@ export const AirportConnectionsModal: React.FC<AirportConnectionsModalProps> = (
           <div className="bg-slate-900/90 border border-slate-800 p-2.5 rounded-xl">
             <span className="text-[11px] text-slate-400 font-medium block">Aerolíneas Autorizadas</span>
             <span className="text-lg font-black text-sky-400">{uniqueAirlines.length}</span>
-            <span className="text-[10px] text-slate-400 ml-1">líneas</span>
           </div>
         </div>
 
@@ -241,21 +240,10 @@ export const AirportConnectionsModal: React.FC<AirportConnectionsModalProps> = (
                                 )}
                                 <div className="text-[10px] text-slate-400 mt-0.5">
                                   {op.aircraft ? `${op.aircraft} • ` : ''}
-                                  {op.flightsCount.toLocaleString()} autorizaciones • {op.passengers.toLocaleString()} pax
+                                  {op.flightsCount.toLocaleString()} autorizaciones
                                 </div>
                               </div>
                             </div>
-
-                            {onSelectRoute && (
-                              <button
-                                onClick={() => onSelectRoute(op.routeId)}
-                                className="p-1.5 rounded-lg bg-slate-800 hover:bg-cyan-500/20 text-slate-400 hover:text-cyan-300 transition text-[10px] flex items-center gap-1 shrink-0 cursor-pointer"
-                                title="Enfocar esta ruta en el mapa"
-                              >
-                                <Navigation className="w-3 h-3" />
-                                <span className="hidden sm:inline">Ver ruta</span>
-                              </button>
-                            )}
                           </div>
                         );
                       })}

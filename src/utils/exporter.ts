@@ -373,7 +373,7 @@ async function exportMapDirectCanvas(
 
   ctx.fillStyle = '#38bdf8';
   ctx.font = 'bold 12px -apple-system, sans-serif';
-  ctx.fillText('COORDINACIÓN DE CONCESIONES Y TRANSPORTE AÉREO', 65, 152);
+  ctx.fillText('COORDINACIÓN DE CONCESIONES DE TRANSPORTE AÉREO', 65, 152);
 
   ctx.fillStyle = '#f8fafc';
   ctx.font = 'bold 15px "SF Mono", monospace, sans-serif';
@@ -445,7 +445,13 @@ async function captureLeafletDomToCanvas(
   routes: FlightRoute[] = [],
   airports: Airport[] = [],
   customColors?: Record<string, string>,
-  mapMode = 'routes_by_airline'
+  mapMode: MapVisualizationMode = 'routes_by_airline',
+  uniqueAnalysisMode: 'general' | 'specific' = 'specific',
+  uniqueMultiColor = '#f59e0b',
+  uniqueSingleColor = '#06b6d4',
+  selectedAirlines: string[] = [],
+  versusFilteredAirlines = false,
+  allRoutes?: FlightRoute[]
 ): Promise<HTMLCanvasElement | null> {
   try {
     const map = (element as any)?._leaflet_map ||
@@ -479,12 +485,7 @@ async function captureLeafletDomToCanvas(
       return [width / 2, height / 2];
     };
 
-    // 2. Draw loaded base map tiles safely (check with 1x1 scratch canvas to guarantee NO tainting)
-    const testCanvas = document.createElement('canvas');
-    testCanvas.width = 1;
-    testCanvas.height = 1;
-    const testCtx = testCanvas.getContext('2d');
-
+    // 2. Draw loaded base map tiles safely (check with isolated scratch canvas to guarantee NO canvas tainting)
     const tiles = element.querySelectorAll('img.leaflet-tile') as NodeListOf<HTMLImageElement>;
     tiles.forEach((tile) => {
       if (!tile.complete || tile.naturalWidth === 0) return;
@@ -496,16 +497,20 @@ async function captureLeafletDomToCanvas(
       if (x + w < 0 || y + h < 0 || x > width || y > height) return;
       
       let isCORSValid = false;
-      if (testCtx) {
-        try {
-          testCtx.clearRect(0, 0, 1, 1);
-          testCtx.drawImage(tile, 0, 0, 1, 1);
-          testCanvas.toDataURL();
+      try {
+        const scratch = document.createElement('canvas');
+        scratch.width = 1;
+        scratch.height = 1;
+        const sCtx = scratch.getContext('2d');
+        if (sCtx) {
+          sCtx.drawImage(tile, 0, 0, 1, 1);
+          scratch.toDataURL(); // Throws SecurityError if cross-origin tainted
           isCORSValid = true;
-        } catch {
-          isCORSValid = false;
         }
+      } catch {
+        isCORSValid = false;
       }
+
       if (isCORSValid) {
         try {
           ctx.drawImage(tile, x, y, w, h);
@@ -545,59 +550,164 @@ async function captureLeafletDomToCanvas(
 
     // 4. Draw flight routes: exact GreatCircle arc points projected through Leaflet map
     if (mapMode !== 'airports') {
-      routes.forEach((route) => {
-        const arcPoints = generateGreatCircleArc(
-          [route.originLat, route.originLng],
-          [route.destLat, route.destLng],
-          35,
-          0.14
-        );
+      if (uniqueAnalysisMode === 'general') {
+        const corridors = getUniqueRouteCorridors(routes);
+        corridors.forEach((corridor) => {
+          const arcPoints = generateGreatCircleArc(
+            [corridor.originLat, corridor.originLng],
+            [corridor.destLat, corridor.destLng],
+            35,
+            0.14
+          );
+          const isSingle = corridor.airlines.length === 1;
+          const strokeColor = isSingle ? (uniqueSingleColor || '#06b6d4') : (uniqueMultiColor || '#f59e0b');
+          const lineWeight = Math.min(6, Math.max(2.2, (corridor.totalFlights / 500) * 1.5));
 
-        const strokeColor = getAirlineColor(route.airline, customColors);
-        const lineWeight = Math.min(6, Math.max(2, (route.flightsCount / 500) * 1.5));
+          ctx.save();
+          ctx.strokeStyle = strokeColor;
+          ctx.lineWidth = lineWeight + 2.5;
+          ctx.globalAlpha = 0.22;
+          ctx.beginPath();
+          arcPoints.forEach((pt, i) => {
+            const [px, py] = project(pt[0], pt[1]);
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+          });
+          ctx.stroke();
+          ctx.restore();
 
-        // Glow
-        ctx.save();
-        ctx.strokeStyle = strokeColor;
-        ctx.lineWidth = lineWeight + 2.5;
-        ctx.globalAlpha = 0.22;
-        ctx.beginPath();
-        arcPoints.forEach((pt, i) => {
-          const [px, py] = project(pt[0], pt[1]);
-          if (i === 0) ctx.moveTo(px, py);
-          else ctx.lineTo(px, py);
+          ctx.save();
+          ctx.strokeStyle = strokeColor;
+          ctx.lineWidth = lineWeight;
+          ctx.globalAlpha = 0.88;
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+          ctx.beginPath();
+          arcPoints.forEach((pt, i) => {
+            const [px, py] = project(pt[0], pt[1]);
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+          });
+          ctx.stroke();
+          ctx.restore();
         });
-        ctx.stroke();
-        ctx.restore();
-
-        // Core line
-        ctx.save();
-        ctx.strokeStyle = strokeColor;
-        ctx.lineWidth = lineWeight;
-        ctx.globalAlpha = 0.88;
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-        ctx.beginPath();
-        arcPoints.forEach((pt, i) => {
-          const [px, py] = project(pt[0], pt[1]);
-          if (i === 0) ctx.moveTo(px, py);
-          else ctx.lineTo(px, py);
+      } else {
+        const allRoutesPool = allRoutes && allRoutes.length > 0 ? allRoutes : routes;
+        const masterCorridorAirlinesMap = new Map<string, Set<string>>();
+        allRoutesPool.forEach((r) => {
+          const [a, b] = [r.originCode, r.destCode].sort();
+          const k = `${a} <-> ${b}`;
+          if (!masterCorridorAirlinesMap.has(k)) masterCorridorAirlinesMap.set(k, new Set());
+          masterCorridorAirlinesMap.get(k)!.add(r.airline.trim().toLowerCase());
         });
-        ctx.stroke();
-        ctx.restore();
-      });
+
+        const activeAirlineSet = new Set(selectedAirlines.map(a => a.trim().toLowerCase()));
+
+        routes.forEach((route) => {
+          const arcPoints = generateGreatCircleArc(
+            [route.originLat, route.originLng],
+            [route.destLat, route.destLng],
+            35,
+            0.14
+          );
+
+          const [a, b] = [route.originCode, route.destCode].sort();
+          const corridorKey = `${a} <-> ${b}`;
+          const corridorAirlines = masterCorridorAirlinesMap.get(corridorKey) || new Set([route.airline.toLowerCase()]);
+
+          let isShared = corridorAirlines.size >= 2;
+          if (versusFilteredAirlines) {
+            if (activeAirlineSet.size <= 1) {
+              isShared = false;
+            } else {
+              let matches = 0;
+              corridorAirlines.forEach(al => {
+                if (activeAirlineSet.has(al)) matches++;
+              });
+              isShared = matches >= 2;
+            }
+          }
+
+          const strokeColor = isShared
+            ? (uniqueMultiColor || '#fbbf24')
+            : getAirlineColor(route.airline, customColors);
+
+          const lineWeight = Math.min(6, Math.max(2, (route.flightsCount / 500) * 1.5));
+
+          ctx.save();
+          ctx.strokeStyle = strokeColor;
+          ctx.lineWidth = lineWeight + 2.5;
+          ctx.globalAlpha = 0.22;
+          ctx.beginPath();
+          arcPoints.forEach((pt, i) => {
+            const [px, py] = project(pt[0], pt[1]);
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+          });
+          ctx.stroke();
+          ctx.restore();
+
+          ctx.save();
+          ctx.strokeStyle = strokeColor;
+          ctx.lineWidth = lineWeight;
+          ctx.globalAlpha = 0.88;
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+          ctx.beginPath();
+          arcPoints.forEach((pt, i) => {
+            const [px, py] = project(pt[0], pt[1]);
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+          });
+          ctx.stroke();
+          ctx.restore();
+        });
+      }
     }
 
     // 5. Draw airport nodes and IATA labels
+    const airportAirlinesMap = new Map<string, Set<string>>();
+    if (mapMode === 'airports') {
+      routes.forEach((r) => {
+        if (!r.airline) return;
+        if (r.originCode) {
+          if (!airportAirlinesMap.has(r.originCode)) airportAirlinesMap.set(r.originCode, new Set());
+          airportAirlinesMap.get(r.originCode)!.add(r.airline);
+        }
+        if (r.destCode) {
+          if (!airportAirlinesMap.has(r.destCode)) airportAirlinesMap.set(r.destCode, new Set());
+          airportAirlinesMap.get(r.destCode)!.add(r.airline);
+        }
+      });
+    }
+
     airports.forEach((airport) => {
       const [ax, ay] = project(airport.lat, airport.lng);
       if (ax < -30 || ay < -30 || ax > width + 30 || ay > height + 30) return;
       const isMajor = ['MEX', 'CUN', 'GDL', 'MTY', 'TIJ', 'NLU'].includes(airport.code);
       const radius = isMajor ? 7.5 : 5.5;
 
+      let nodeColor = isMajor ? '#38bdf8' : '#0ea5e9';
+      if (mapMode === 'airports') {
+        const isNone = selectedAirlines.includes('__NONE__');
+        if (isNone) return;
+        const alSet = airportAirlinesMap.get(airport.code);
+        if (selectedAirlines.length > 0 && (!alSet || alSet.size === 0)) {
+          return;
+        }
+        if (alSet && alSet.size >= 2) {
+          nodeColor = uniqueMultiColor || '#f59e0b';
+        } else if (alSet && alSet.size === 1) {
+          const sole = Array.from(alSet)[0];
+          nodeColor = getAirlineColor(sole, customColors);
+        } else {
+          nodeColor = '#06b6d4';
+        }
+      }
+
       ctx.save();
       // Glow
-      ctx.fillStyle = '#06b6d4';
+      ctx.fillStyle = nodeColor;
       ctx.globalAlpha = 0.35;
       ctx.beginPath();
       ctx.arc(ax, ay, radius + 4, 0, Math.PI * 2);
@@ -605,7 +715,7 @@ async function captureLeafletDomToCanvas(
 
       // Sharp dot
       ctx.globalAlpha = 1;
-      ctx.fillStyle = isMajor ? '#38bdf8' : '#0ea5e9';
+      ctx.fillStyle = nodeColor;
       ctx.strokeStyle = '#ffffff';
       ctx.lineWidth = 1.8;
       ctx.beginPath();
@@ -625,130 +735,17 @@ async function captureLeafletDomToCanvas(
 
       ctx.fillStyle = 'rgba(11, 15, 25, 0.95)';
       ctx.fillRect(lx, ly, labelW, labelH);
-      ctx.strokeStyle = 'rgba(56, 189, 248, 0.65)';
+      ctx.strokeStyle = nodeColor || 'rgba(56, 189, 248, 0.65)';
       ctx.lineWidth = 1;
       ctx.strokeRect(lx, ly, labelW, labelH);
 
-      ctx.fillStyle = '#38bdf8';
+      ctx.fillStyle = nodeColor || '#38bdf8';
       ctx.textBaseline = 'middle';
       ctx.fillText(airport.code, lx + 4, ly + labelH / 2);
       ctx.restore();
     });
 
-    // 6. Institutional AFAC Header Title Card
-    ctx.save();
-    const cardW = Math.min(width - 40, 560);
-    const cardH = 95;
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
-    ctx.fillRect(20, 20, cardW, cardH);
-    ctx.strokeStyle = 'rgba(56, 189, 248, 0.6)';
-    ctx.lineWidth = 1.5;
-    ctx.strokeRect(20, 20, cardW, cardH);
-
-    ctx.fillStyle = '#38bdf8';
-    ctx.font = 'bold 15px -apple-system, sans-serif';
-    ctx.fillText('Observatorio Gráfico de Rutas Aéreas Nacionales Autorizadas', 35, 42);
-
-    ctx.fillStyle = '#cbd5e1';
-    ctx.font = '500 10px -apple-system, sans-serif';
-    ctx.fillText('(con base en información georreferenciada)', 35, 56);
-
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 11px -apple-system, sans-serif';
-    ctx.fillText('AGENCIA FEDERAL DE AVIACIÓN CIVIL', 35, 72);
-
-    ctx.fillStyle = '#94a3b8';
-    ctx.font = 'bold 9.5px -apple-system, sans-serif';
-    ctx.fillText('DIRECCIÓN EJECUTIVA DE TRANSPORTE Y CONTROL AERONÁUTICO', 35, 87);
-
-    ctx.fillStyle = '#38bdf8';
-    ctx.font = 'bold 10px "JetBrains Mono", monospace, sans-serif';
-    const modeLabel = mapMode === 'airports'
-      ? `Visualización 1: Aeropuertos y Hubs (${airports.length} aeropuertos activos)`
-      : mapMode === 'unique_routes'
-      ? `Visualización 3: Rutas Únicas (${routes.length} autorizaciones consolidadas)`
-      : `Visualización 2: Rutas Autorizadas (${routes.length} rutas • ${airports.length} aeropuertos)`;
-    ctx.fillText(modeLabel, 35, 98);
-    ctx.restore();
-
-    // 7. LEYENDA Y VIÑETA CROMÁTICA DE AEROLÍNEAS CON CÓDIGOS IATA
-    const airlineCounts: Record<string, number> = {};
-    routes.forEach((r) => {
-      if (r.airline && r.airline.trim()) {
-        const a = r.airline.trim();
-        airlineCounts[a] = (airlineCounts[a] || 0) + 1;
-      }
-    });
-    const uniqueAirlines = Object.entries(airlineCounts)
-      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-      .map(([airline, count]) => ({
-        airline,
-        count,
-        iata: getAirlineIataCode(airline),
-        color: getAirlineColor(airline, customColors),
-      }));
-
-    if (uniqueAirlines.length > 0) {
-      const itemsPerCol = Math.min(10, Math.max(3, Math.ceil(uniqueAirlines.length / 3)));
-      const numCols = Math.ceil(uniqueAirlines.length / itemsPerCol);
-      const colW = 220;
-      const legW = Math.min(width - 40, Math.max(320, numCols * colW + 30));
-      const legH = 38 + itemsPerCol * 24;
-      const legX = width - legW - 20;
-      const legY = height - legH - 20;
-
-      ctx.save();
-      ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
-      ctx.fillRect(legX, legY, legW, legH);
-      ctx.strokeStyle = 'rgba(56, 189, 248, 0.55)';
-      ctx.lineWidth = 1.5;
-      ctx.strokeRect(legX, legY, legW, legH);
-
-      // Legend Title
-      ctx.fillStyle = '#38bdf8';
-      ctx.font = 'bold 11px -apple-system, sans-serif';
-      ctx.fillText(`LEYENDA & VIÑETAS CROMÁTICAS (${uniqueAirlines.length} AEROLÍNEAS)`, legX + 15, legY + 22);
-
-      uniqueAirlines.forEach((item, idx) => {
-        const col = Math.floor(idx / itemsPerCol);
-        const row = idx % itemsPerCol;
-        const ix = legX + 15 + col * colW;
-        const iy = legY + 44 + row * 24;
-
-        // Colored swatch/bullet with crisp white outline
-        ctx.fillStyle = item.color;
-        ctx.beginPath();
-        if (typeof (ctx as any).roundRect === 'function') {
-          (ctx as any).roundRect(ix, iy - 10, 18, 12, 3);
-        } else {
-          ctx.rect(ix, iy - 10, 18, 12);
-        }
-        ctx.fill();
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 1;
-        ctx.stroke();
-
-        // IATA badge
-        ctx.fillStyle = 'rgba(56, 189, 248, 0.2)';
-        ctx.fillRect(ix + 24, iy - 10, 24, 12);
-        ctx.strokeStyle = 'rgba(56, 189, 248, 0.6)';
-        ctx.strokeRect(ix + 24, iy - 10, 24, 12);
-        ctx.fillStyle = '#38bdf8';
-        ctx.font = 'bold 9px "JetBrains Mono", monospace';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(item.iata, ix + 36, iy - 4);
-
-        // Airline name and count
-        ctx.textAlign = 'left';
-        ctx.fillStyle = '#f1f5f9';
-        ctx.font = 'bold 10px -apple-system, sans-serif';
-        const displayName = item.airline.length > 18 ? item.airline.slice(0, 17) + '…' : item.airline;
-        ctx.fillText(`${displayName} (${item.count})`, ix + 54, iy - 4);
-      });
-      ctx.restore();
-    }
-
+    // NOTE: Center cards are intentionally excluded so the map area is completely clean and clear of tabs!
     return canvas;
   } catch (err) {
     console.warn('captureLeafletDomToCanvas error:', err);
@@ -958,42 +955,6 @@ function createVectorMapCanvas(
       ctx.restore();
     });
 
-    // 7. Official AFAC Header
-    ctx.save();
-    const cardW = Math.min(width - 40, 560);
-    const cardH = 95;
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
-    ctx.fillRect(20, 20, cardW, cardH);
-    ctx.strokeStyle = 'rgba(56, 189, 248, 0.6)';
-    ctx.lineWidth = 1.5;
-    ctx.strokeRect(20, 20, cardW, cardH);
-
-    ctx.fillStyle = '#38bdf8';
-    ctx.font = 'bold 15px -apple-system, sans-serif';
-    ctx.fillText('Observatorio Gráfico de Rutas Aéreas Nacionales Autorizadas', 35, 42);
-
-    ctx.fillStyle = '#cbd5e1';
-    ctx.font = '500 10px -apple-system, sans-serif';
-    ctx.fillText('(con base en información georreferenciada)', 35, 56);
-
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 11px -apple-system, sans-serif';
-    ctx.fillText('AGENCIA FEDERAL DE AVIACIÓN CIVIL', 35, 72);
-
-    ctx.fillStyle = '#94a3b8';
-    ctx.font = 'bold 9.5px -apple-system, sans-serif';
-    ctx.fillText('DIRECCIÓN EJECUTIVA DE TRANSPORTE Y CONTROL AERONÁUTICO', 35, 87);
-
-    ctx.fillStyle = '#38bdf8';
-    ctx.font = 'bold 10px monospace';
-    const modeLabel = mapMode === 'airports'
-      ? `Visualización 1: Aeropuertos y Hubs (${airports.length} aeropuertos activos)`
-      : mapMode === 'unique_routes'
-      ? `Visualización 3: Rutas Únicas (${routes.length} autorizaciones consolidadas)`
-      : `Visualización 2: Rutas Autorizadas (${routes.length} rutas • ${airports.length} aeropuertos)`;
-    ctx.fillText(modeLabel, 35, 98);
-    ctx.restore();
-
     return canvas;
   } catch (err) {
     console.warn('createVectorMapCanvas error:', err);
@@ -1010,84 +971,142 @@ export async function exportMapToImage(
   routes: FlightRoute[] = [],
   airports: Airport[] = [],
   customColors?: Record<string, string>,
-  mapMode = 'routes_by_airline'
+  mapMode: MapVisualizationMode = 'routes_by_airline',
+  uniqueAnalysisMode: 'general' | 'specific' = 'specific',
+  selectedAirlines: string[] = [],
+  versusFilteredAirlines = false,
+  allRoutes?: FlightRoute[]
 ) {
   const element = document.getElementById(elementId);
 
   // Strategy 1: Direct DOM Canvas Compositor (captures exact current zoom, tiles, markers, and mode)
   if (element) {
-    const directCanvas = await captureLeafletDomToCanvas(element, routes, airports, customColors, mapMode);
-    if (directCanvas) {
-      const blob = await new Promise<Blob | null>((resolve) => directCanvas.toBlob(resolve, 'image/png'));
-      if (blob && blob.size > 2000) {
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.download = filename;
-        link.href = url;
-        link.click();
-        setTimeout(() => URL.revokeObjectURL(url), 3000);
-        return;
-      }
-    }
-  }
-
-  // Strategy 2: Attempt html2canvas capture with Leaflet transform normalization
-  if (element) {
     try {
-      const canvas = await html2canvas(element, {
-        useCORS: true,
-        allowTaint: false,
-        scale: 2, // High resolution
-        logging: false,
-        backgroundColor: '#020617',
-        ignoreElements: (el) => {
-          return (
-            el.id?.includes('-btn-') ||
-            el.classList?.contains('leaflet-control-container') ||
-            el.id?.includes('toast')
-          );
-        },
-        onclone: (clonedDoc) => {
-          const mapPanes = clonedDoc.querySelectorAll('.leaflet-map-pane') as NodeListOf<HTMLElement>;
-          mapPanes.forEach((pane) => {
-            const transform = pane.style.transform;
-            if (transform && transform.includes('translate3d')) {
-              const match = transform.match(/translate3d\(([-0-9.]+)px,\s*([-0-9.]+)px/);
-              if (match) {
-                pane.style.transform = `translate(${match[1]}px, ${match[2]}px)`;
-              }
-            }
-          });
+      const mapCanvas = await captureLeafletDomToCanvas(
+        element,
+        routes,
+        airports,
+        customColors,
+        mapMode,
+        uniqueAnalysisMode,
+        '#f59e0b',
+        '#06b6d4',
+        selectedAirlines,
+        versusFilteredAirlines,
+        allRoutes
+      );
 
-          const tileContainers = clonedDoc.querySelectorAll('.leaflet-tile-container') as NodeListOf<HTMLElement>;
-          tileContainers.forEach((tc) => {
-            const transform = tc.style.transform;
-            if (transform && transform.includes('translate3d')) {
-              const match = transform.match(/translate3d\(([-0-9.]+)px,\s*([-0-9.]+)px/);
-              if (match) {
-                tc.style.transform = `translate(${match[1]}px, ${match[2]}px)`;
-              }
-            }
-          });
-        },
-      });
+      if (mapCanvas) {
+        // Compose onto an institutional canvas with Top Header, clean center map, and Bottom Legend
+        const headerH = 130;
+        const legendH = (mapMode !== 'airports' && routes.length > 0) ? 140 : 0;
+        const border = 16;
+        const fullCanvas = document.createElement('canvas');
+        fullCanvas.width = mapCanvas.width + (border * 2);
+        fullCanvas.height = mapCanvas.height + headerH + legendH + (border * 2);
 
-      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
-      if (blob && blob.size > 2000) {
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.download = filename;
-        link.href = url;
-        link.click();
-        setTimeout(() => URL.revokeObjectURL(url), 3000);
-        return;
+        const ctx = fullCanvas.getContext('2d');
+        if (ctx) {
+          ctx.fillStyle = '#020617';
+          ctx.fillRect(0, 0, fullCanvas.width, fullCanvas.height);
+
+          // Top Header Bar
+          ctx.fillStyle = '#0f172a';
+          ctx.fillRect(0, 0, fullCanvas.width, headerH);
+          ctx.strokeStyle = '#1e293b';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(0, 0, fullCanvas.width, headerH);
+
+          ctx.fillStyle = '#38bdf8';
+          ctx.font = 'bold 22px -apple-system, sans-serif';
+          ctx.fillText('Observatorio Gráfico de Rutas Aéreas Nacionales Autorizadas', border + 12, 44);
+
+          ctx.fillStyle = '#ffffff';
+          ctx.font = 'bold 15px -apple-system, sans-serif';
+          ctx.fillText('AGENCIA FEDERAL DE AVIACIÓN CIVIL', border + 12, 72);
+
+          ctx.fillStyle = '#94a3b8';
+          ctx.font = 'bold 12px -apple-system, sans-serif';
+          ctx.fillText('DIRECCIÓN EJECUTIVA DE TRANSPORTE Y CONTROL AERONÁUTICO • COORDINACIÓN DE CONCESIONES DE TRANSPORTE AÉREO', border + 12, 98);
+
+          // Top Right Stats Indicator
+          ctx.fillStyle = '#38bdf8';
+          ctx.font = 'bold 14px "JetBrains Mono", monospace';
+          ctx.textAlign = 'right';
+          const statText = mapMode === 'airports'
+            ? `${airports.length} aeropuertos activos`
+            : `${routes.length} rutas autorizadas  |  ${airports.length} aeropuertos`;
+          ctx.fillText(statText, fullCanvas.width - border - 12, 72);
+          ctx.textAlign = 'left';
+
+          // Draw Map in the Center (clean, zero floating tabs!)
+          const yPos = headerH + border;
+          ctx.drawImage(mapCanvas, border, yPos);
+          ctx.strokeStyle = '#38bdf8';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(border, yPos, mapCanvas.width, mapCanvas.height);
+
+          // Bottom Legend (if routes exist and not in pure airports mode)
+          if (legendH > 0) {
+            const legY = yPos + mapCanvas.height + border;
+            const legW = fullCanvas.width - (border * 2);
+            ctx.fillStyle = '#0f172a';
+            ctx.fillRect(border, legY, legW, legendH - border);
+            ctx.strokeStyle = '#1e293b';
+            ctx.lineWidth = 1.5;
+            ctx.strokeRect(border, legY, legW, legendH - border);
+
+            const uniqueAirlines = Array.from(new Set(routes.map(r => r.airline))).filter(Boolean);
+            ctx.fillStyle = '#38bdf8';
+            ctx.font = 'bold 13px -apple-system, sans-serif';
+            ctx.fillText(`VIÑETA CROMÁTICA DE AEROLÍNEAS (${uniqueAirlines.length} AUTORIZADAS)`, border + 20, legY + 28);
+
+            const cols = 5;
+            const colW = (legW - 40) / cols;
+            uniqueAirlines.forEach((airline, idx) => {
+              const col = idx % cols;
+              const row = Math.floor(idx / cols);
+              if (row >= 3) return; // Up to 3 rows
+              const chipX = border + 20 + col * colW;
+              const chipY = legY + 54 + row * 24;
+              const aColor = getAirlineColor(airline, customColors);
+              const aIata = getAirlineIataCode(airline);
+
+              ctx.fillStyle = aColor;
+              ctx.fillRect(chipX, chipY - 10, 18, 12);
+              ctx.strokeStyle = '#ffffff';
+              ctx.lineWidth = 1;
+              ctx.strokeRect(chipX, chipY - 10, 18, 12);
+
+              ctx.fillStyle = '#38bdf8';
+              ctx.font = 'bold 11px "JetBrains Mono", monospace';
+              ctx.fillText(`[${aIata}]`, chipX + 26, chipY);
+
+              ctx.fillStyle = '#cbd5e1';
+              ctx.font = '11px -apple-system, sans-serif';
+              const label = airline.length > 20 ? airline.slice(0, 19) + '…' : airline;
+              ctx.fillText(label, chipX + 64, chipY);
+            });
+          }
+
+          const blob = await new Promise<Blob | null>((resolve) => fullCanvas.toBlob(resolve, 'image/png'));
+          if (blob && blob.size > 2000) {
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.download = filename;
+            link.href = url;
+            link.click();
+            setTimeout(() => URL.revokeObjectURL(url), 3000);
+            return;
+          }
+        }
       }
     } catch (err) {
-      console.warn('html2canvas capture warning, switching to High-Res Direct Canvas GIS Engine:', err);
+      console.warn('exportMapToImage direct compositor warning:', err);
     }
   }
 
-  // Strategy 3: Direct High-Res Vector Canvas Renderer (Faithful to active mapMode and Republic of Mexico geography)
+  // Strategy 2: Direct High-Res Vector Canvas Renderer (Faithful to active mapMode and Republic of Mexico geography)
   await exportMapDirectCanvas(routes, airports, filename, customColors, mapMode);
 }
 
@@ -1104,7 +1123,17 @@ async function exportComparisonDirectCanvas(
   airlineBName = 'Todas las Rutas (B)',
   filename = 'comparativa_rutas_mexico.png',
   customColors?: Record<string, string>,
-  mapMode = 'routes_by_airline'
+  modeA: MapVisualizationMode = 'routes_by_airline',
+  modeB: MapVisualizationMode = 'routes_by_airline',
+  uniqueAnalysisModeA: 'general' | 'specific' = 'specific',
+  uniqueAnalysisModeB: 'general' | 'specific' = 'specific',
+  uniqueMultiColor = '#f59e0b',
+  uniqueSingleColor = '#06b6d4',
+  selectedAirlinesA: string[] = [],
+  selectedAirlinesB: string[] = [],
+  versusFilteredAirlinesA = false,
+  versusFilteredAirlinesB = false,
+  allRoutes?: FlightRoute[]
 ) {
   const width = 3200;
   const height = 1650;
@@ -1139,7 +1168,7 @@ async function exportComparisonDirectCanvas(
 
   ctx.fillStyle = '#94a3b8';
   ctx.font = 'bold 13px -apple-system, sans-serif';
-  ctx.fillText('DIRECCIÓN EJECUTIVA DE TRANSPORTE Y CONTROL AERONÁUTICO • COORDINACIÓN DE CONCESIONES Y TRANSPORTE AÉREO', 50, 92);
+  ctx.fillText('DIRECCIÓN EJECUTIVA DE TRANSPORTE Y CONTROL AERONÁUTICO • COORDINACIÓN DE CONCESIONES DE TRANSPORTE AÉREO', 50, 92);
 
   const routeDelta = routesB.length - routesA.length;
   ctx.fillStyle = '#38bdf8';
@@ -1150,11 +1179,14 @@ async function exportComparisonDirectCanvas(
     68
   );
 
-  // Render a single map pane
+  // Render a single map pane (clean, with NO central boxes or tabs)
   const renderPane = (
     paneRoutes: FlightRoute[],
     paneAirports: Airport[],
-    paneTitle: string,
+    paneMode: MapVisualizationMode,
+    paneUniqueAnalysisMode: 'general' | 'specific',
+    paneSelectedAirlines: string[],
+    paneVersus: boolean,
     startX: number,
     startY: number,
     paneW: number,
@@ -1237,58 +1269,162 @@ async function exportComparisonDirectCanvas(
     drawShapeOnPane(BAJA_PENINSULA_OUTLINE);
 
     // Flight Arcs (ONLY IF NOT IN MODE 1: AIRPORTS ONLY)
-    if (mapMode !== 'airports') {
-      paneRoutes.forEach((route) => {
-        const arcPoints = generateGreatCircleArc(
-          [route.originLat, route.originLng],
-          [route.destLat, route.destLng],
-          35,
-          0.14
-        );
+    if (paneMode !== 'airports') {
+      if (paneUniqueAnalysisMode === 'general') {
+        const corridors = getUniqueRouteCorridors(paneRoutes);
+        corridors.forEach((corridor) => {
+          const arcPoints = generateGreatCircleArc(
+            [corridor.originLat, corridor.originLng],
+            [corridor.destLat, corridor.destLng],
+            35,
+            0.14
+          );
+          const isSingle = corridor.airlines.length === 1;
+          const strokeColor = isSingle ? (uniqueSingleColor || '#06b6d4') : (uniqueMultiColor || '#f59e0b');
+          const lineWeight = 3;
 
-        const strokeColor = getAirlineColor(route.airline, customColors);
-        const lineWeight = 3;
+          ctx.save();
+          ctx.strokeStyle = strokeColor;
+          ctx.lineWidth = lineWeight + 3;
+          ctx.globalAlpha = 0.25;
+          ctx.beginPath();
+          arcPoints.forEach((pt, i) => {
+            const [px, py] = project(pt[0], pt[1]);
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+          });
+          ctx.stroke();
+          ctx.restore();
 
-        // Glow
-        ctx.save();
-        ctx.strokeStyle = strokeColor;
-        ctx.lineWidth = lineWeight + 3;
-        ctx.globalAlpha = 0.3;
-        ctx.beginPath();
-        arcPoints.forEach((pt, i) => {
-          const [px, py] = project(pt[0], pt[1]);
-          if (i === 0) ctx.moveTo(px, py);
-          else ctx.lineTo(px, py);
+          ctx.save();
+          ctx.strokeStyle = strokeColor;
+          ctx.lineWidth = lineWeight;
+          ctx.globalAlpha = 0.88;
+          ctx.lineCap = 'round';
+          ctx.beginPath();
+          arcPoints.forEach((pt, i) => {
+            const [px, py] = project(pt[0], pt[1]);
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+          });
+          ctx.stroke();
+          ctx.restore();
         });
-        ctx.stroke();
-        ctx.restore();
-
-        // Sharp Core
-        ctx.save();
-        ctx.strokeStyle = strokeColor;
-        ctx.lineWidth = lineWeight;
-        ctx.globalAlpha = 0.88;
-        ctx.lineCap = 'round';
-        ctx.beginPath();
-        arcPoints.forEach((pt, i) => {
-          const [px, py] = project(pt[0], pt[1]);
-          if (i === 0) ctx.moveTo(px, py);
-          else ctx.lineTo(px, py);
+      } else {
+        const allRoutesPool = allRoutes && allRoutes.length > 0 ? allRoutes : paneRoutes;
+        const masterCorridorAirlinesMap = new Map<string, Set<string>>();
+        allRoutesPool.forEach((r) => {
+          const [a, b] = [r.originCode, r.destCode].sort();
+          const k = `${a} <-> ${b}`;
+          if (!masterCorridorAirlinesMap.has(k)) masterCorridorAirlinesMap.set(k, new Set());
+          masterCorridorAirlinesMap.get(k)!.add(r.airline.trim().toLowerCase());
         });
-        ctx.stroke();
-        ctx.restore();
-      });
+
+        const activeAirlineSet = new Set(paneSelectedAirlines.map(a => a.trim().toLowerCase()));
+
+        paneRoutes.forEach((route) => {
+          const arcPoints = generateGreatCircleArc(
+            [route.originLat, route.originLng],
+            [route.destLat, route.destLng],
+            35,
+            0.14
+          );
+
+          const [a, b] = [route.originCode, route.destCode].sort();
+          const corridorKey = `${a} <-> ${b}`;
+          const corridorAirlines = masterCorridorAirlinesMap.get(corridorKey) || new Set([route.airline.toLowerCase()]);
+
+          let isShared = corridorAirlines.size >= 2;
+          if (paneVersus) {
+            if (activeAirlineSet.size <= 1) {
+              isShared = false;
+            } else {
+              let matches = 0;
+              corridorAirlines.forEach(al => {
+                if (activeAirlineSet.has(al)) matches++;
+              });
+              isShared = matches >= 2;
+            }
+          }
+
+          const strokeColor = isShared
+            ? (uniqueMultiColor || '#fbbf24')
+            : getAirlineColor(route.airline, customColors);
+          const lineWeight = 3;
+
+          // Glow
+          ctx.save();
+          ctx.strokeStyle = strokeColor;
+          ctx.lineWidth = lineWeight + 3;
+          ctx.globalAlpha = 0.3;
+          ctx.beginPath();
+          arcPoints.forEach((pt, i) => {
+            const [px, py] = project(pt[0], pt[1]);
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+          });
+          ctx.stroke();
+          ctx.restore();
+
+          // Sharp Core
+          ctx.save();
+          ctx.strokeStyle = strokeColor;
+          ctx.lineWidth = lineWeight;
+          ctx.globalAlpha = 0.88;
+          ctx.lineCap = 'round';
+          ctx.beginPath();
+          arcPoints.forEach((pt, i) => {
+            const [px, py] = project(pt[0], pt[1]);
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+          });
+          ctx.stroke();
+          ctx.restore();
+        });
+      }
     }
 
     // Airport Nodes
+    const airportAirlinesMap = new Map<string, Set<string>>();
+    if (paneMode === 'airports') {
+      paneRoutes.forEach((r) => {
+        if (!r.airline) return;
+        if (r.originCode) {
+          if (!airportAirlinesMap.has(r.originCode)) airportAirlinesMap.set(r.originCode, new Set());
+          airportAirlinesMap.get(r.originCode)!.add(r.airline);
+        }
+        if (r.destCode) {
+          if (!airportAirlinesMap.has(r.destCode)) airportAirlinesMap.set(r.destCode, new Set());
+          airportAirlinesMap.get(r.destCode)!.add(r.airline);
+        }
+      });
+    }
+
     paneAirports.forEach((airport) => {
       const [ax, ay] = project(airport.lat, airport.lng);
       const isMajor = ['MEX', 'CUN', 'GDL', 'MTY', 'TIJ', 'NLU'].includes(airport.code);
       const radius = isMajor ? 9 : 5.5;
 
+      let nodeColor = isMajor ? '#38bdf8' : '#0ea5e9';
+      if (paneMode === 'airports') {
+        const isNone = paneSelectedAirlines.includes('__NONE__');
+        if (isNone) return;
+        const alSet = airportAirlinesMap.get(airport.code);
+        if (paneSelectedAirlines.length > 0 && (!alSet || alSet.size === 0)) {
+          return;
+        }
+        if (alSet && alSet.size >= 2) {
+          nodeColor = uniqueMultiColor || '#f59e0b';
+        } else if (alSet && alSet.size === 1) {
+          const sole = Array.from(alSet)[0];
+          nodeColor = getAirlineColor(sole, customColors);
+        } else {
+          nodeColor = '#06b6d4';
+        }
+      }
+
       ctx.save();
-      // In Mode 1 compare view, airports appear with distinct airline color of that pane!
-      ctx.fillStyle = mapMode === 'airports' ? badgeColor : (isMajor ? '#38bdf8' : '#0ea5e9');
+      ctx.fillStyle = nodeColor;
       ctx.strokeStyle = '#ffffff';
       ctx.lineWidth = 2;
       ctx.beginPath();
@@ -1301,34 +1437,16 @@ async function exportComparisonDirectCanvas(
       const tw = ctx.measureText(airport.code).width;
       ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
       ctx.fillRect(ax - tw / 2 - 4, ay - radius - 18, tw + 8, 16);
-      ctx.strokeStyle = isMajor ? badgeColor : 'rgba(255, 255, 255, 0.3)';
+      ctx.strokeStyle = isMajor ? nodeColor : 'rgba(255, 255, 255, 0.3)';
       ctx.lineWidth = 1;
       ctx.strokeRect(ax - tw / 2 - 4, ay - radius - 18, tw + 8, 16);
 
-      ctx.fillStyle = isMajor ? badgeColor : '#e2e8f0';
+      ctx.fillStyle = isMajor ? nodeColor : '#e2e8f0';
       ctx.fillText(airport.code, ax - tw / 2, ay - radius - 5);
       ctx.restore();
     });
 
-    // Header Card for Pane
-    ctx.save();
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
-    ctx.fillRect(startX + 25, startY + 25, 480, 80);
-    ctx.strokeStyle = badgeColor;
-    ctx.lineWidth = 2;
-    ctx.strokeRect(startX + 25, startY + 25, 480, 80);
-
-    ctx.fillStyle = badgeColor;
-    ctx.font = '900 18px -apple-system, sans-serif';
-    ctx.fillText(paneTitle, startX + 45, startY + 58);
-
-    ctx.fillStyle = '#94a3b8';
-    ctx.font = 'bold 14px -apple-system, sans-serif';
-    const paneSubtitle = mapMode === 'airports'
-      ? `${paneAirports.length} aeropuertos con autorizaciones`
-      : `${paneRoutes.length} rutas autorizadas • ${paneAirports.length} aeropuertos`;
-    ctx.fillText(paneSubtitle, startX + 45, startY + 86);
-    ctx.restore();
+    // NOTE: Pane Header Card is intentionally omitted so the center of the image is completely clean and clear of tabs!
   };
 
   const paneWidth = (width - 60) / 2;
@@ -1338,10 +1456,10 @@ async function exportComparisonDirectCanvas(
   const colorB = airlineBName && !airlineBName.includes('Todas') ? getAirlineColor(airlineBName, customColors) : '#c084fc';
 
   // Render Map A (Left)
-  renderPane(routesA, airportsA, `MAPA A: ${airlineAName}`, 20, 130, paneWidth, paneHeight, colorA);
+  renderPane(routesA, airportsA, modeA, uniqueAnalysisModeA, selectedAirlinesA, versusFilteredAirlinesA, 20, 130, paneWidth, paneHeight, colorA);
 
   // Render Map B (Right)
-  renderPane(routesB, airportsB, `MAPA B: ${airlineBName}`, 20 + paneWidth + 20, 130, paneWidth, paneHeight, colorB);
+  renderPane(routesB, airportsB, modeB, uniqueAnalysisModeB, selectedAirlinesB, versusFilteredAirlinesB, 20 + paneWidth + 20, 130, paneWidth, paneHeight, colorB);
 
   // Bottom Viñeta Cromática de Aerolíneas Card
   const allComparedRoutes = [...routesA, ...routesB];
@@ -1395,21 +1513,73 @@ async function exportComparisonDirectCanvas(
   setTimeout(() => URL.revokeObjectURL(url), 4000);
 }
 
+export interface DualExportOptions {
+  containerId?: string;
+  filename?: string;
+  routesA?: FlightRoute[];
+  routesB?: FlightRoute[];
+  airportsA?: Airport[];
+  airportsB?: Airport[];
+  airlineAName?: string;
+  airlineBName?: string;
+  labelA?: string;
+  labelB?: string;
+  customColors?: Record<string, string>;
+  mapMode?: MapVisualizationMode;
+  modeA?: MapVisualizationMode;
+  modeB?: MapVisualizationMode;
+  uniqueAnalysisModeA?: 'general' | 'specific';
+  uniqueAnalysisModeB?: 'general' | 'specific';
+  selectedAirlinesA?: string[];
+  selectedAirlinesB?: string[];
+  versusFilteredAirlinesA?: boolean;
+  versusFilteredAirlinesB?: boolean;
+  selectedTopNA?: number | null;
+  selectedTopNB?: number | null;
+  uniqueMultiColor?: string;
+  uniqueSingleColor?: string;
+  allRoutes?: FlightRoute[];
+}
+
 /**
  * Exports Side-by-Side Dual Map Comparison to a PNG image file
  */
 export async function exportComparisonToImage(
-  containerId = 'compare-view-container',
-  filename = 'comparativa_rutas_mexico.png',
-  routesA: FlightRoute[] = [],
-  routesB: FlightRoute[] = [],
-  airportsA: Airport[] = [],
-  airportsB: Airport[] = [],
-  airlineAName = 'Mapa A',
-  airlineBName = 'Mapa B',
-  customColors?: Record<string, string>,
-  mapMode = 'routes_by_airline'
+  containerIdOrOptions: string | DualExportOptions = 'compare-view-container',
+  filenameArg = 'comparativa_rutas_mexico.png',
+  routesAArg: FlightRoute[] = [],
+  routesBArg: FlightRoute[] = [],
+  airportsAArg: Airport[] = [],
+  airportsBArg: Airport[] = [],
+  airlineANameArg = 'Mapa A',
+  airlineBNameArg = 'Mapa B',
+  customColorsArg?: Record<string, string>,
+  mapModeArg: MapVisualizationMode = 'routes_by_airline'
 ) {
+  const isObject = typeof containerIdOrOptions === 'object' && containerIdOrOptions !== null;
+  const opts = isObject ? (containerIdOrOptions as DualExportOptions) : {};
+
+  const containerId = isObject ? (opts.containerId || 'compare-view-container') : (containerIdOrOptions as string);
+  const filename = isObject ? (opts.filename || 'comparativa_rutas_mexico.png') : filenameArg;
+  const routesA = isObject ? (opts.routesA || []) : routesAArg;
+  const routesB = isObject ? (opts.routesB || []) : routesBArg;
+  const airportsA = isObject ? (opts.airportsA || []) : airportsAArg;
+  const airportsB = isObject ? (opts.airportsB || []) : airportsBArg;
+  const airlineAName = isObject ? (opts.labelA || opts.airlineAName || 'Mapa A') : airlineANameArg;
+  const airlineBName = isObject ? (opts.labelB || opts.airlineBName || 'Mapa B') : airlineBNameArg;
+  const customColors = isObject ? opts.customColors : customColorsArg;
+  const modeA = isObject ? (opts.modeA || opts.mapMode || 'routes_by_airline') : mapModeArg;
+  const modeB = isObject ? (opts.modeB || opts.mapMode || 'routes_by_airline') : mapModeArg;
+  const uniqueAnalysisModeA = isObject ? (opts.uniqueAnalysisModeA || 'specific') : 'specific';
+  const uniqueAnalysisModeB = isObject ? (opts.uniqueAnalysisModeB || 'specific') : 'specific';
+  const selectedAirlinesA = isObject ? (opts.selectedAirlinesA || []) : [];
+  const selectedAirlinesB = isObject ? (opts.selectedAirlinesB || []) : [];
+  const versusFilteredAirlinesA = isObject ? Boolean(opts.versusFilteredAirlinesA) : false;
+  const versusFilteredAirlinesB = isObject ? Boolean(opts.versusFilteredAirlinesB) : false;
+  const uniqueMultiColor = isObject ? (opts.uniqueMultiColor || '#f59e0b') : '#f59e0b';
+  const uniqueSingleColor = isObject ? (opts.uniqueSingleColor || '#06b6d4') : '#06b6d4';
+  const allRoutes = isObject ? opts.allRoutes : undefined;
+
   const element = document.getElementById(containerId);
 
   // Strategy 1: High-Fidelity Direct DOM Dual Canvas Compositor
@@ -1420,8 +1590,32 @@ export async function exportComparisonToImage(
       const colorA = airlineAName && !airlineAName.includes('Todas') ? getAirlineColor(airlineAName, customColors) : '#06b6d4';
       const colorB = airlineBName && !airlineBName.includes('Todas') ? getAirlineColor(airlineBName, customColors) : '#c084fc';
       const [canvasA, canvasB] = await Promise.all([
-        captureLeafletDomToCanvas(mapA, routesA, airportsA, customColors, mapMode),
-        captureLeafletDomToCanvas(mapB, routesB, airportsB, customColors, mapMode),
+        captureLeafletDomToCanvas(
+          mapA,
+          routesA,
+          airportsA,
+          customColors,
+          modeA,
+          uniqueAnalysisModeA,
+          uniqueMultiColor,
+          uniqueSingleColor,
+          selectedAirlinesA,
+          versusFilteredAirlinesA,
+          allRoutes
+        ),
+        captureLeafletDomToCanvas(
+          mapB,
+          routesB,
+          airportsB,
+          customColors,
+          modeB,
+          uniqueAnalysisModeB,
+          uniqueMultiColor,
+          uniqueSingleColor,
+          selectedAirlinesB,
+          versusFilteredAirlinesB,
+          allRoutes
+        ),
       ]);
 
       if (canvasA && canvasB) {
@@ -1454,16 +1648,25 @@ export async function exportComparisonToImage(
 
           ctx.fillStyle = '#94a3b8';
           ctx.font = 'bold 12px -apple-system, sans-serif';
-          ctx.fillText('DIRECCIÓN EJECUTIVA DE TRANSPORTE Y CONTROL AERONÁUTICO • COORDINACIÓN DE CONCESIONES Y TRANSPORTE AÉREO', border + 12, 100);
+          ctx.fillText('DIRECCIÓN EJECUTIVA DE TRANSPORTE Y CONTROL AERONÁUTICO • COORDINACIÓN DE CONCESIONES DE TRANSPORTE AÉREO', border + 12, 100);
 
-          // Draw Map A
+          // Top Right Stats Indicator
+          ctx.fillStyle = '#38bdf8';
+          ctx.font = 'bold 14px "JetBrains Mono", monospace';
+          ctx.textAlign = 'right';
+          const topStatA = modeA === 'airports' ? `${airportsA.length} aeps` : `${routesA.length} rts`;
+          const topStatB = modeB === 'airports' ? `${airportsB.length} aeps` : `${routesB.length} rts`;
+          ctx.fillText(`Mapa A: ${topStatA}  |  Mapa B: ${topStatB}`, dualCanvas.width - border - 12, 74);
+          ctx.textAlign = 'left';
+
+          // Draw Map A (Center left - clean, zero floating tabs!)
           const yPos = headerH + border;
           ctx.drawImage(canvasA, border, yPos);
           ctx.strokeStyle = colorA;
           ctx.lineWidth = 3;
           ctx.strokeRect(border, yPos, canvasA.width, canvasA.height);
 
-          // Draw Map B
+          // Draw Map B (Center right - clean, zero floating tabs!)
           const xPosB = border + canvasA.width + gap;
           ctx.drawImage(canvasB, xPosB, yPos);
           ctx.strokeStyle = colorB;
@@ -1488,6 +1691,9 @@ export async function exportComparisonToImage(
           const iataA = airlineAName === 'all' || airlineAName.includes('Todas') ? 'TODAS' : getAirlineIataCode(airlineAName);
           const iataB = airlineBName === 'all' || airlineBName.includes('Todas') ? 'TODAS' : getAirlineIataCode(airlineBName);
 
+          const descA = modeA === 'airports' ? `${airportsA.length} aeropuertos` : `${routesA.length} rutas • ${airportsA.length} aerop.`;
+          const descB = modeB === 'airports' ? `${airportsB.length} aeropuertos` : `${routesB.length} rutas • ${airportsB.length} aerop.`;
+
           // Pill A
           ctx.fillStyle = colorA;
           ctx.fillRect(border + 20, legY + 44, 22, 14);
@@ -1496,7 +1702,7 @@ export async function exportComparisonToImage(
           ctx.strokeRect(border + 20, legY + 44, 22, 14);
           ctx.fillStyle = '#ffffff';
           ctx.font = 'bold 12px "JetBrains Mono", monospace';
-          ctx.fillText(`MAPA A: [${iataA}] ${airlineAName} (${routesA.length} rutas)`, border + 50, legY + 56);
+          ctx.fillText(`MAPA A: [${iataA}] ${airlineAName} (${descA})`, border + 50, legY + 56);
 
           // Pill B
           const pillBX = border + Math.round(legW / 2);
@@ -1507,7 +1713,7 @@ export async function exportComparisonToImage(
           ctx.strokeRect(pillBX, legY + 44, 22, 14);
           ctx.fillStyle = '#ffffff';
           ctx.font = 'bold 12px "JetBrains Mono", monospace';
-          ctx.fillText(`MAPA B: [${iataB}] ${airlineBName} (${routesB.length} rutas)`, pillBX + 30, legY + 56);
+          ctx.fillText(`MAPA B: [${iataB}] ${airlineBName} (${descB})`, pillBX + 30, legY + 56);
 
           // Multi-airline chips breakdown
           const allComparedRoutes = [...routesA, ...routesB];
@@ -1553,66 +1759,11 @@ export async function exportComparisonToImage(
         }
       }
     } catch (err) {
-      console.warn('Direct DOM comparison capture warning:', err);
+      console.warn('Direct DOM comparison capture warning, switching to High-Res Direct Canvas GIS Engine:', err);
     }
   }
 
-  // Strategy 2: Attempt html2canvas capture of the side-by-side container
-  if (element) {
-    try {
-      const canvas = await html2canvas(element, {
-        useCORS: true,
-        allowTaint: false,
-        scale: 2,
-        logging: false,
-        backgroundColor: '#020617',
-        ignoreElements: (el) => {
-          return (
-            el.id?.includes('-btn-') ||
-            el.classList?.contains('leaflet-control-container')
-          );
-        },
-        onclone: (clonedDoc) => {
-          const mapPanes = clonedDoc.querySelectorAll('.leaflet-map-pane') as NodeListOf<HTMLElement>;
-          mapPanes.forEach((pane) => {
-            const transform = pane.style.transform;
-            if (transform && transform.includes('translate3d')) {
-              const match = transform.match(/translate3d\(([-0-9.]+)px,\s*([-0-9.]+)px/);
-              if (match) {
-                pane.style.transform = `translate(${match[1]}px, ${match[2]}px)`;
-              }
-            }
-          });
-
-          const tileContainers = clonedDoc.querySelectorAll('.leaflet-tile-container') as NodeListOf<HTMLElement>;
-          tileContainers.forEach((tc) => {
-            const transform = tc.style.transform;
-            if (transform && transform.includes('translate3d')) {
-              const match = transform.match(/translate3d\(([-0-9.]+)px,\s*([-0-9.]+)px/);
-              if (match) {
-                tc.style.transform = `translate(${match[1]}px, ${match[2]}px)`;
-              }
-            }
-          });
-        },
-      });
-
-      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
-      if (blob && blob.size > 2000) {
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.download = filename;
-        link.href = url;
-        link.click();
-        setTimeout(() => URL.revokeObjectURL(url), 3000);
-        return;
-      }
-    } catch (err) {
-      console.warn('html2canvas capture warning for comparison, switching to High-Res Direct Canvas GIS Engine:', err);
-    }
-  }
-
-  // Strategy 2: High-Res Direct Canvas Dual GIS Renderer
+  // Strategy 2: High-Res Direct Canvas Dual GIS Renderer (Faithful to active mapModes, custom colors, and Republic of Mexico geography)
   await exportComparisonDirectCanvas(
     routesA,
     routesB,
@@ -1622,7 +1773,17 @@ export async function exportComparisonToImage(
     airlineBName,
     filename,
     customColors,
-    mapMode
+    modeA,
+    modeB,
+    uniqueAnalysisModeA,
+    uniqueAnalysisModeB,
+    uniqueMultiColor,
+    uniqueSingleColor,
+    selectedAirlinesA,
+    selectedAirlinesB,
+    versusFilteredAirlinesA,
+    versusFilteredAirlinesB,
+    allRoutes
   );
 }
 
@@ -1733,7 +1894,7 @@ export function exportComparisonToStandaloneHtml(
         AGENCIA FEDERAL DE AVIACIÓN CIVIL
       </div>
       <div style="font-size: 10px; color: #94a3b8; font-weight: 500;">
-        DIRECCIÓN EJECUTIVA DE TRANSPORTE Y CONTROL AERONÁUTICO &bull; COORDINACIÓN DE CONCESIONES Y TRANSPORTE AÉREO
+        DIRECCIÓN EJECUTIVA DE TRANSPORTE Y CONTROL AERONÁUTICO &bull; COORDINACIÓN DE CONCESIONES DE TRANSPORTE AÉREO
       </div>
     </div>
     <div class="kpis">
@@ -2353,7 +2514,7 @@ export function exportMapToStandaloneHtml(
       DIRECCIÓN EJECUTIVA DE TRANSPORTE Y CONTROL AERONÁUTICO
     </div>
     <div style="font-size: 11.5px; color: #38bdf8; font-weight: 600;">
-      COORDINACIÓN DE CONCESIONES Y TRANSPORTE AÉREO
+      COORDINACIÓN DE CONCESIONES DE TRANSPORTE AÉREO
     </div>
   </div>
 

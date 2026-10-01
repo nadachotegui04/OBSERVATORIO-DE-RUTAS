@@ -185,7 +185,7 @@ export const CompareView: React.FC<CompareViewProps> = ({
 
       // Top N filter
       if (topNCodes) {
-        if (!topNCodes.has(r.originCode) && !topNCodes.has(r.destCode)) {
+        if (!topNCodes.has(r.originCode) || !topNCodes.has(r.destCode)) {
           return false;
         }
       }
@@ -276,18 +276,28 @@ export const CompareView: React.FC<CompareViewProps> = ({
   ]);
 
   const airportsA = useMemo(() => {
+    const fromRoutes = extractUniqueAirports(routesA);
     if (selectedTopNA && modeA === 'airports') {
+      const topNCodes = new Set(top15Airports.slice(0, selectedTopNA).map((h) => h.code));
+      if (selectedAirlinesA.length > 0 && !selectedAirlinesA.includes('__NONE__')) {
+        return fromRoutes.filter(a => topNCodes.has(a.code));
+      }
       return top15Airports.slice(0, selectedTopNA);
     }
-    return extractUniqueAirports(routesA);
-  }, [routesA, selectedTopNA, modeA, top15Airports]);
+    return fromRoutes;
+  }, [routesA, selectedTopNA, modeA, top15Airports, selectedAirlinesA]);
 
   const airportsB = useMemo(() => {
+    const fromRoutes = extractUniqueAirports(routesB);
     if (selectedTopNB && modeB === 'airports') {
+      const topNCodes = new Set(top15Airports.slice(0, selectedTopNB).map((h) => h.code));
+      if (selectedAirlinesB.length > 0 && !selectedAirlinesB.includes('__NONE__')) {
+        return fromRoutes.filter(a => topNCodes.has(a.code));
+      }
       return top15Airports.slice(0, selectedTopNB);
     }
-    return extractUniqueAirports(routesB);
-  }, [routesB, selectedTopNB, modeB, top15Airports]);
+    return fromRoutes;
+  }, [routesB, selectedTopNB, modeB, top15Airports, selectedAirlinesB]);
 
   // Metrics for comparison: strictly Rutas and Aeropuertos
   const statsA = useMemo(() => ({ count: routesA.length, airports: airportsA.length }), [routesA, airportsA]);
@@ -376,7 +386,18 @@ export const CompareView: React.FC<CompareViewProps> = ({
         selectedAirlines: selectedAirlinesA,
         extension: 'png',
       });
-      await exportMapToImage('map-compare-a', filename, routesA, airportsA, customAirlineColors, modeA);
+      await exportMapToImage(
+        'map-compare-a',
+        filename,
+        routesA,
+        airportsA,
+        customAirlineColors,
+        modeA,
+        uniqueAnalysisModeA,
+        selectedAirlinesA,
+        versusFilteredAirlinesA,
+        allRoutes
+      );
     } catch (err: any) {
       console.error('Error exportando Mapa A:', err);
     } finally {
@@ -393,7 +414,18 @@ export const CompareView: React.FC<CompareViewProps> = ({
         selectedAirlines: selectedAirlinesB,
         extension: 'png',
       });
-      await exportMapToImage('map-compare-b', filename, routesB, airportsB, customAirlineColors, modeB);
+      await exportMapToImage(
+        'map-compare-b',
+        filename,
+        routesB,
+        airportsB,
+        customAirlineColors,
+        modeB,
+        uniqueAnalysisModeB,
+        selectedAirlinesB,
+        versusFilteredAirlinesB,
+        allRoutes
+      );
     } catch (err: any) {
       console.error('Error exportando Mapa B:', err);
     } finally {
@@ -405,8 +437,20 @@ export const CompareView: React.FC<CompareViewProps> = ({
   const handleExportComparisonPng = async () => {
     try {
       setIsExportingPng(true);
-      const labelA = selectedAirlinesA.length === 1 ? selectedAirlinesA[0] : 'Mapa A (Personalizado)';
-      const labelB = selectedAirlinesB.length === 1 ? selectedAirlinesB[0] : 'Mapa B (Personalizado)';
+      const labelA = selectedAirlinesA.length === 1
+        ? selectedAirlinesA[0]
+        : selectedHubCodeA
+        ? `Hub: ${selectedHubCodeA}`
+        : selectedTopNA
+        ? `Top ${selectedTopNA}`
+        : 'Mapa A (Personalizado)';
+      const labelB = selectedAirlinesB.length === 1
+        ? selectedAirlinesB[0]
+        : selectedHubCodeB
+        ? `Hub: ${selectedHubCodeB}`
+        : selectedTopNB
+        ? `Top ${selectedTopNB}`
+        : 'Mapa B (Personalizado)';
       const filename = generateExportFilename({
         prefix: 'comparativa_dual',
         airlineA: labelA,
@@ -414,8 +458,8 @@ export const CompareView: React.FC<CompareViewProps> = ({
         isDual: true,
         extension: 'png',
       });
-      await exportComparisonToImage(
-        'compare-view-container',
+      await exportComparisonToImage({
+        containerId: 'compare-view-container',
         filename,
         routesA,
         routesB,
@@ -423,9 +467,19 @@ export const CompareView: React.FC<CompareViewProps> = ({
         airportsB,
         labelA,
         labelB,
-        customAirlineColors,
-        modeA
-      );
+        customColors: customAirlineColors,
+        modeA,
+        modeB,
+        uniqueAnalysisModeA,
+        uniqueAnalysisModeB,
+        selectedAirlinesA,
+        selectedAirlinesB,
+        versusFilteredAirlinesA,
+        versusFilteredAirlinesB,
+        selectedTopNA,
+        selectedTopNB,
+        allRoutes,
+      });
       setPngSuccess(true);
       setTimeout(() => setPngSuccess(false), 2500);
     } catch (err: any) {
@@ -901,12 +955,14 @@ export const CompareView: React.FC<CompareViewProps> = ({
               airports={airportsA}
               mapMode={modeA}
               onMapModeChange={setModeA}
+              isAirportConnectionsOpen={Boolean(selectedAirportForConnections)}
               selectedAirportCode={selectedAirportCodeA}
               onSelectAirport={(code) => setSelectedAirportCodeA((prev) => (prev === code ? null : code))}
               onOpenAirportConnections={(code) => {
                 setSelectedAirportForConnections(code);
                 setConnectionsModalRoutes(routesA);
               }}
+              onFilterAirportConnections={(code) => setSelectedAirportCodeA((prev) => (prev === code ? null : code))}
               onSelectRoute={onSelectRoute}
               tileLayerKey={tileLayerA}
               customAirlineColors={customAirlineColors}
@@ -1177,12 +1233,14 @@ export const CompareView: React.FC<CompareViewProps> = ({
               airports={airportsB}
               mapMode={modeB}
               onMapModeChange={setModeB}
+              isAirportConnectionsOpen={Boolean(selectedAirportForConnections)}
               selectedAirportCode={selectedAirportCodeB}
               onSelectAirport={(code) => setSelectedAirportCodeB((prev) => (prev === code ? null : code))}
               onOpenAirportConnections={(code) => {
                 setSelectedAirportForConnections(code);
                 setConnectionsModalRoutes(routesB);
               }}
+              onFilterAirportConnections={(code) => setSelectedAirportCodeB((prev) => (prev === code ? null : code))}
               onSelectRoute={onSelectRoute}
               tileLayerKey={tileLayerB}
               customAirlineColors={customAirlineColors}
